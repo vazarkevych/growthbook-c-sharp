@@ -34,13 +34,12 @@ namespace GrowthBook.Converters
 
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
-            var valueNamespace = (Namespace)value;
+            var bucketRange = (BucketRange)value;
 
             var array = new JArray
             {
-                JToken.FromObject(valueNamespace.Id),
-                JToken.FromObject(valueNamespace.Start),
-                JToken.FromObject(valueNamespace.End)
+                JToken.FromObject(bucketRange.Start),
+                JToken.FromObject(bucketRange.End)
             };
 
             array.WriteTo(writer);
