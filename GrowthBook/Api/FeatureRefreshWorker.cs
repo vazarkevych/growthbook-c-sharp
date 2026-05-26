@@ -30,6 +30,7 @@ namespace GrowthBook.Api
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly GrowthBookConfigurationOptions _config;
         private readonly IGrowthBookFeatureCache _cache;
+        private readonly LruETagCache _etagCache;
         private readonly string _featuresApiEndpoint;
         private readonly string _serverSentEventsApiEndpoint;
         private bool _isServerSentEventsEnabled;
@@ -42,6 +43,7 @@ namespace GrowthBook.Api
             _httpClientFactory = httpClientFactory;
             _config = config;
             _cache = cache;
+            _etagCache = new LruETagCache(config.EtagCacheSize);
 
             var hostEndpoint = config.ApiHost;
             var trimmedHostEndpoint = new string(hostEndpoint?.Reverse().SkipWhile(x => x == '/').Reverse().ToArray());
@@ -65,7 +67,17 @@ namespace GrowthBook.Api
 
             var httpClient = _httpClientFactory.CreateClient(ConfiguredClients.DefaultApiClient);
 
-            var response = await httpClient.GetFeaturesFrom(_featuresApiEndpoint, _logger, _config, cancellationToken ?? _refreshWorkerCancellation.Token);
+            var response = await httpClient.GetFeaturesFrom(_featuresApiEndpoint, _logger, _config, cancellationToken ?? _refreshWorkerCancellation.Token, _etagCache);
+
+            if (response.IsNotModified)
+            {
+                if (_cache is InMemoryFeatureCache inMemoryCache)
+                {
+                    await inMemoryCache.RefreshExpiration(cancellationToken);
+                }
+
+                return await _cache.GetFeatures(cancellationToken);
+            }
 
             if (response.Features is null)
             {
