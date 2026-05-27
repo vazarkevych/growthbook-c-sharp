@@ -36,7 +36,7 @@ public class StandardCasesMetadataTests
     {
         var standardCases = LoadStandardCases();
 
-        standardCases["specVersion"]?.ToString().Should().Be("0.7.1");
+        standardCases["specVersion"]?.ToString().Should().Be("0.7.0");
     }
 
     [Fact]
