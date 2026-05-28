@@ -214,25 +214,15 @@ namespace GrowthBook.Providers
 
             if (op == "$regex")
             {
-                try
-                {
-                    return Regex.IsMatch(attributeValue?.ToString(), conditionValue?.ToString());
-                }
-                catch (ArgumentException)
-                {
-                    return false;
-                }
+                return EvaluateRegex(attributeValue, conditionValue, RegexOptions.None, negate: false);
+            }
+            if (op == "$regexi")
+            {
+                return EvaluateRegex(attributeValue, conditionValue, RegexOptions.IgnoreCase, negate: false);
             }
             if (op == "$nregex")
             {
-                try
-                {
-                    return !Regex.IsMatch(attributeValue?.ToString(), conditionValue?.ToString());
-                }
-                catch (ArgumentException)
-                {
-                    return false;
-                }
+                return EvaluateRegex(attributeValue, conditionValue, RegexOptions.None, negate: true);
             }
             if (op == "$in")
             {
@@ -240,7 +230,15 @@ namespace GrowthBook.Providers
                 {
                     return false;
                 }
-                return IsIn(conditionValue, attributeValue, savedGroups);
+                return IsIn(conditionValue, attributeValue);
+            }
+            if (op == "$ini")
+            {
+                if (conditionValue.Type != JTokenType.Array)
+                {
+                    return false;
+                }
+                return IsIn(conditionValue, attributeValue, StringComparison.OrdinalIgnoreCase);
             }
             if (op == "$nin")
             {
@@ -248,31 +246,23 @@ namespace GrowthBook.Providers
                 {
                     return false;
                 }
-                return !IsIn(conditionValue, attributeValue, savedGroups);
+                return !IsIn(conditionValue, attributeValue);
             }
-            if (op == "$all")
+            if (op == "$nini")
             {
                 if (conditionValue.Type != JTokenType.Array)
                 {
                     return false;
                 }
-                if (attributeValue?.Type != JTokenType.Array)
-                {
-                    return false;
-                }
-
-                var conditionList = (JArray)conditionValue;
-                var attributeList = (JArray)attributeValue;
-
-                foreach (JToken condition in conditionList)
-                {
-                    if (!attributeList.Any(x => EvalConditionValue(condition, x, savedGroups)))
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
+                return !IsIn(conditionValue, attributeValue, StringComparison.OrdinalIgnoreCase);
+            }
+            if (op == "$all")
+            {
+                return IsAll(conditionValue, attributeValue, savedGroups, stringComparison: null);
+            }
+            if (op == "$alli")
+            {
+                return IsAll(conditionValue, attributeValue, savedGroups, StringComparison.OrdinalIgnoreCase);
             }
 
             if (op == "$elemMatch")
@@ -337,7 +327,7 @@ namespace GrowthBook.Providers
                 {
                     var array = savedGroups[conditionValue.ToString()]?.AsArray() ?? new JArray();
 
-                    return IsIn(array, attributeValue, savedGroups);
+                    return IsIn(array, attributeValue);
                 }
             }
             if (op == "$notInGroup")
@@ -346,7 +336,7 @@ namespace GrowthBook.Providers
                 {
                     var array = savedGroups[conditionValue.ToString()]?.AsArray() ?? new JArray();
 
-                    return !IsIn(array, attributeValue, savedGroups);
+                    return !IsIn(array, attributeValue);
                 }
             }
 
@@ -401,28 +391,52 @@ namespace GrowthBook.Providers
             return true;
         }
 
-        private bool IsIn(JToken conditionValue, JToken actualValue, JObject savedGroups)
+        private static bool EvaluateRegex(JToken attributeValue, JToken conditionValue, RegexOptions options, bool negate)
+        {
+            if (attributeValue.IsNull() || conditionValue.IsNull())
+            {
+                return false;
+            }
+
+            try
+            {
+                var isMatch = Regex.IsMatch(attributeValue.ToString(), conditionValue.ToString(), options);
+
+                return negate ? !isMatch : isMatch;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private bool IsIn(JToken conditionValue, JToken actualValue, StringComparison? stringComparison = null)
         {
             if (actualValue?.Type == JTokenType.Array)
             {
                 _logger.LogDebug("Evaluating whether the specified value is in an array");
 
-                var conditionValues = new HashSet<JToken>(conditionValue);
-                var actualValues = new HashSet<JToken>(actualValue);
+                if (stringComparison is null)
+                {
+                    var conditionValues = new HashSet<JToken>(conditionValue);
+                    var actualValues = new HashSet<JToken>(actualValue);
 
-                conditionValues.IntersectWith(actualValues);
+                    conditionValues.IntersectWith(actualValues);
 
-                return conditionValues.Any();
+                    return conditionValues.Any();
+                }
+
+                return conditionValue.Any(condition => actualValue.Any(actual => TokensEqual(condition, actual, stringComparison.Value)));
             }
             else if (conditionValue is JArray array)
             {
-                return array.Any(x => x.Equals(actualValue));
+                return array.Any(x => TokensEqual(x, actualValue, stringComparison));
             }
             else
             {
                 _logger.LogDebug("Evaluating whether the specified value is equal to or contained within the actual value");
 
-                if (conditionValue == actualValue)
+                if (TokensEqual(conditionValue, actualValue, stringComparison))
                 {
                     return true;
                 }
@@ -432,8 +446,55 @@ namespace GrowthBook.Providers
                     return false;
                 }
 
-                return conditionValue.ToString().Contains(actualValue.ToString());
+                return conditionValue.ToString().IndexOf(actualValue.ToString(), stringComparison ?? StringComparison.Ordinal) >= 0;
             }
+        }
+
+        private bool IsAll(JToken conditionValue, JToken attributeValue, JObject savedGroups, StringComparison? stringComparison)
+        {
+            if (conditionValue.Type != JTokenType.Array)
+            {
+                return false;
+            }
+            if (attributeValue?.Type != JTokenType.Array)
+            {
+                return false;
+            }
+
+            var conditionList = (JArray)conditionValue;
+            var attributeList = (JArray)attributeValue;
+
+            foreach (JToken condition in conditionList)
+            {
+                if (stringComparison is null)
+                {
+                    if (!attributeList.Any(x => EvalConditionValue(condition, x, savedGroups)))
+                    {
+                        return false;
+                    }
+                }
+                else if (!attributeList.Any(x => TokensEqual(condition, x, stringComparison)))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TokensEqual(JToken left, JToken right, StringComparison? stringComparison)
+        {
+            if (stringComparison is null)
+            {
+                return JToken.DeepEquals(left ?? JValue.CreateNull(), right ?? JValue.CreateNull());
+            }
+
+            if (left?.Type == JTokenType.String && right?.Type == JTokenType.String)
+            {
+                return string.Equals(left.ToString(), right.ToString(), stringComparison.Value);
+            }
+
+            return JToken.DeepEquals(left ?? JValue.CreateNull(), right ?? JValue.CreateNull());
         }
 
         private static bool CompareVersions(JToken left, JToken right, Func<int, bool> meetsComparison)
@@ -484,7 +545,8 @@ namespace GrowthBook.Providers
 
         /// <summary>
         /// Evaluates a comparison operation between an attribute value and a condition value.
-        /// Returns false if the attribute is null/missing, as null values should not satisfy any comparison.
+        /// Missing numeric attributes are compared as zero to match the standard fixture.
+        /// Explicit null values never satisfy comparison operators.
         /// </summary>
         /// <param name="attributeValue">The attribute value to compare.</param>
         /// <param name="conditionValue">The condition value to compare against.</param>
@@ -492,8 +554,18 @@ namespace GrowthBook.Providers
         /// <returns>True if the comparison is satisfied, false if attribute is null or comparison fails.</returns>
         private bool EvaluateComparison(JToken attributeValue, JToken conditionValue, Func<int, bool> meetsComparison)
         {
-            // Null/missing attributes should never satisfy comparison operators
-            if (attributeValue.IsNull())
+            if (attributeValue == null)
+            {
+                if (conditionValue.Type == JTokenType.Integer || conditionValue.Type == JTokenType.Float)
+                {
+                    return meetsComparison(0d.CompareTo(conditionValue.Value<double>()));
+                }
+
+                return false;
+            }
+
+            // Explicit null attributes should never satisfy comparison operators.
+            if (attributeValue.Type == JTokenType.Null)
             {
                 return false;
             }
