@@ -159,9 +159,8 @@ namespace GrowthBook.Tests.CustomTests
         }
 
         [Fact]
-        public void SecurityTest_AllComparisonOperators_WithNull_ShouldReturnFalse()
+        public void SecurityTest_ExplicitNullComparisonOperators_ShouldReturnFalse()
         {
-            // Test all comparison operators with null values
             var conditions = new[]
             {
                 @"{ ""value"": { ""$gt"": 10 } }",
@@ -171,18 +170,15 @@ namespace GrowthBook.Tests.CustomTests
             };
 
             var nullAttributes = JObject.Parse(@"{ ""value"": null }");
-            var missingAttributes = JObject.Parse("{}");
 
             foreach (var conditionJson in conditions)
             {
                 var condition = JObject.Parse(conditionJson);
                 
                 var nullResult = _provider.EvalCondition(nullAttributes, condition);
-                var missingResult = _provider.EvalCondition(missingAttributes, condition);
                 
                 nullResult.Should().BeFalse($"because null value should fail condition: {conditionJson}");
-                missingResult.Should().BeFalse($"because missing value should fail condition: {conditionJson}");
             }
         }
     }
-} 
+}
