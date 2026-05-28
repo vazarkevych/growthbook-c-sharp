@@ -253,6 +253,20 @@ public class FeatureRefreshWorkerTests : ApiUnitTest<FeatureRefreshWorker>
     }
 
     [Fact]
+    public async Task PublicGetFeaturesFromOverloadDoesNotRequireETagCache()
+    {
+        var endpoint = "https://cdn.growthbook.io/api/features/sdk-test";
+        var json = JsonConvert.SerializeObject(new FeaturesResponse { Features = _availableFeatures });
+        var handler = new ETagTestDelegatingHandler("public-overload-etag", json);
+        var httpClient = new HttpClient(handler);
+
+        var response = await httpClient.GetFeaturesFrom(endpoint, _logger, _config, CancellationToken.None);
+
+        response.Features.Should().BeEquivalentTo(_availableFeatures);
+        handler.ReceivedIfNoneMatchHeader.Should().BeFalse("because the public overload has no ETag cache");
+    }
+
+    [Fact]
     public async Task NotModifiedResponseReturnsCachedFeaturesWithoutReplacingCache()
     {
         var etag = "test-etag-304";

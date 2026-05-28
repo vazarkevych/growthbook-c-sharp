@@ -37,7 +37,7 @@ namespace GrowthBook.Api.Extensions
             {
                 var cachedETag = etagCache?.Get(endpoint);
 
-                if (!cachedETag.IsNullOrWhitespace())
+                if (etagCache != null && !string.IsNullOrWhiteSpace(cachedETag))
                 {
                     try
                     {
