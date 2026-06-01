@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GrowthBook.Api;
 using GrowthBook.Extensions;
+using GrowthBook.Providers;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -14,6 +15,9 @@ namespace GrowthBook.MultiUser
     {
         private readonly Options _options;
         private readonly IGrowthBookFeatureRepository _repository;
+        private readonly IConditionEvaluationProvider _conditionEvaluator;
+        private readonly FeatureEvaluationProvider _featureEvaluator;
+        private readonly ExperimentEvaluationProvider _experimentEvaluator;
         private readonly ILoggerFactory _loggerFactory;
         private readonly bool _ownsLoggerFactory;
         private readonly bool _ownsRepository;
@@ -34,6 +38,12 @@ namespace GrowthBook.MultiUser
                 _loggerFactory = LoggerFactory.Create(builder => { });
                 _ownsLoggerFactory = true;
             }
+
+            _loggerFactory.CreateLogger<ConditionEvaluationProvider>();
+            _experimentEvaluator = new ExperimentEvaluationProvider(
+                _loggerFactory.CreateLogger<ExperimentEvaluationProvider>(), _conditionEvaluator);
+            _featureEvaluator = new FeatureEvaluationProvider(
+                _loggerFactory.CreateLogger<FeatureEvaluationProvider>(), _conditionEvaluator);
 
             if (options.FeatureRepository != null)
             {
@@ -91,24 +101,36 @@ namespace GrowthBook.MultiUser
 
         public FeatureResult EvalFeature(string key, UserContext userContext)
         {
-            // Create light GrowthBook without repository - features already exist
-            using var gb = CreateEvaluator(userContext);
-            return gb.EvalFeature(key);
+            var context = BuildEvaluationContext(userContext);
+            return _featureEvaluator.EvaluateFeature(key, context);
         }
 
         public ExperimentResult Run(Experiment experiment, UserContext userContext)
         {
-            using var gb = CreateEvaluator(userContext);
-            return gb.Run(experiment);
+            var context = BuildEvaluationContext(userContext);
+            return _experimentEvaluator.RunExperiment(experiment, null, context);
         }
 
         public T GetFeature<T>(string key, T fallback, UserContext userContext)
         {
-            using var gb = CreateEvaluator(userContext);
-            return gb.GetFeatureValue(key, fallback);
+            var result = EvalFeature(key, userContext);
+            if (result.Value == null)
+            {
+                return fallback;
+            }
+
+            try
+            {
+                return result.Value.ToObject<T>();
+            }
+            catch
+            {
+                return fallback;
+            }
+
         }
 
-        private GrowthBook CreateEvaluator(UserContext userContext)
+        private EvaluationContext BuildEvaluationContext(UserContext userContext)
         {
             var stickyBucketService = userContext?.StickyBucketService ?? _options.StickyBucketService;
             var stickyBucketDocs = userContext?.StickyBucketAssignmentDocs;
@@ -118,25 +140,28 @@ namespace GrowthBook.MultiUser
                 var attrs = userContext?.Attributes?.Properties()
                     .Where(p => !p.Value.IsNull() && !string.IsNullOrEmpty(p.Value.ToString()))
                     .Select(p => $"{p.Name}||{p.Value}");
-
-                stickyBucketDocs = attrs != null
-                    ? stickyBucketService.GetAllAssignments(attrs)
-                    : null;
+                stickyBucketDocs = attrs != null ? stickyBucketService.GetAllAssignments(attrs) : null;
             }
 
-            return new GrowthBook(new Context
+            var global = new GlobalContext
             {
                 Features = _currentFeatures,
                 Enabled = _options.Enabled,
                 QaMode = _options.QaMode,
+                TrackingCallback = _options.TrackingCallback,
+                StickyBucketService = stickyBucketService
+            };
+
+            var user = new UserContext
+            {
                 Attributes = userContext?.Attributes ?? new JObject(),
-                Url = userContext?.Url,
                 ForcedVariations = userContext?.ForcedVariations,
-                TrackingCallback = userContext?.TrackingCallback ?? _options.TrackingCallback,
+                TrackingCallback = userContext?.TrackingCallback,
                 StickyBucketService = stickyBucketService,
-                StickyBucketAssignmentDocs = stickyBucketDocs,
-                LoggerFactory = _loggerFactory
-            });
+                StickyBucketAssignmentDocs = stickyBucketDocs ?? new Dictionary<string, StickyAssignmentsDocument>()
+            };
+
+            return new EvaluationContext(global, user);
         }
 
         private static IGrowthBookFeatureRepository CreateRepository(Options options, ILoggerFactory loggerFactory)

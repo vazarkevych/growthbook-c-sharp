@@ -12,6 +12,7 @@ using GrowthBook.Providers;
 using GrowthBook.Services;
 using GrowthBook.Utilities;
 using GrowthBook.Exceptions;
+using GrowthBook.MultiUser;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -32,6 +33,8 @@ namespace GrowthBook
         private Action<Experiment, ExperimentResult> _trackingCallback;
         private bool _disposedValue;
         private readonly IConditionEvaluationProvider _conditionEvaluator;
+        private readonly FeatureEvaluationProvider _featureEvaluator;
+        private readonly ExperimentEvaluationProvider _experimentEvaluator;
         private readonly IGrowthBookFeatureRepository _featureRepository;
         private readonly IStickyBucketService _stickyBucketService;
         private readonly IDictionary<string, StickyAssignmentsDocument> _stickyBucketAssignmentDocs;
@@ -62,7 +65,7 @@ namespace GrowthBook
             Url = context.Url;
             Features = context.Features?.ToDictionary(k => k.Key, v => v.Value) ?? new Dictionary<string, Feature>();
             Experiments = context.Experiments ?? new List<Experiment>();
-            ForcedVariations = context.ForcedVariations;
+            ForcedVariations = context.ForcedVariations ?? new Dictionary<string, int>();
 
             _qaMode = context.QaMode;
             _trackingCallback = context.TrackingCallback;
@@ -103,6 +106,12 @@ namespace GrowthBook
             var conditionEvaluatorLogger = _loggerFactory.CreateLogger<ConditionEvaluationProvider>();
 
             _conditionEvaluator = new ConditionEvaluationProvider(conditionEvaluatorLogger);
+            _experimentEvaluator = new ExperimentEvaluationProvider(
+                _loggerFactory.CreateLogger<ExperimentEvaluationProvider>(),
+                _conditionEvaluator);
+            _featureEvaluator = new FeatureEvaluationProvider(
+                _loggerFactory.CreateLogger<FeatureEvaluationProvider>(),
+                _conditionEvaluator);
 
             if (context.FeatureRepository != null)
             {
@@ -464,166 +473,8 @@ namespace GrowthBook
 
         private FeatureResult EvaluateFeature(string featureId, ISet<string> evaluatedFeatures = default)
         {
-            try
-            {
-                evaluatedFeatures = evaluatedFeatures ?? new HashSet<string>();
-
-                if (evaluatedFeatures.Contains(featureId))
-                {
-                    return GetFeatureResult(default, FeatureResult.SourceId.CyclicPrerequisite);
-                }
-
-                evaluatedFeatures.Add(featureId);
-
-                if (!Features.TryGetValue(featureId, out Feature feature))
-                {
-                    return GetFeatureResult(null, FeatureResult.SourceId.UnknownFeature);
-                }
-
-                _logger.LogDebug("Evaluating feature '{FeatureId}' with {RuleCount} rules", featureId, feature?.Rules?.Count ?? 0);
-
-                var ruleIndex = 0;
-
-                foreach (FeatureRule rule in feature?.Rules ?? Enumerable.Empty<FeatureRule>())
-                {
-                    ruleIndex++;
-                    if (rule.ParentConditions != null)
-                    {
-                        var passedPrerequisiteEvaluations = true;
-
-                        foreach (var parentCondition in rule.ParentConditions)
-                        {
-                            // Use a fresh copy of the evaluated feature ids to avoid
-                            // incorrectly flagging repeated prerequisite evaluations as cycles
-                            var parentResult = EvaluateFeature(parentCondition.Id, new HashSet<string>(evaluatedFeatures));
-
-                            // Don't continue evaluating if the prerequisite conditions have cycles.
-                            if (parentResult.Source == FeatureResult.SourceId.CyclicPrerequisite)
-                            {
-                                _logger.LogWarning("Detected cyclic prerequisite while evaluating parent feature '{ParentId}' for feature '{FeatureId}'. Evaluated: {EvaluatedFeatures}", parentCondition.Id, featureId, string.Join(",", evaluatedFeatures));
-                                return GetFeatureResult(default, FeatureResult.SourceId.CyclicPrerequisite);
-                            }
-
-                            var evaluationObject = new JObject { ["value"] = parentResult.Value };
-
-                            var isSuccess = _conditionEvaluator.EvalCondition(evaluationObject, parentCondition.Condition ?? new JObject(), _savedGroups);
-
-                            if (!isSuccess)
-                            {
-                                // When the parent evaluation is gated we'll treat that as a complete failure.
-
-                                if (parentCondition.Gate)
-                                {
-                                    _logger.LogDebug("Rule {RuleIndex}: Gated prerequisite '{ParentId}' failed for feature '{FeatureId}', aborting", ruleIndex, parentCondition.Id, featureId);
-                                    return GetFeatureResult(default, FeatureResult.SourceId.Prerequisite);
-                                }
-
-                                passedPrerequisiteEvaluations = false;
-                                _logger.LogDebug("Rule {RuleIndex}: Prerequisite '{ParentId}' did not pass for feature '{FeatureId}', continuing to next rule", ruleIndex, parentCondition.Id, featureId);
-                                break;
-                            }
-                        }
-
-                        if (!passedPrerequisiteEvaluations)
-                        {
-                            continue;
-                        }
-                    }
-
-                    if (rule.Filters?.Any() == true && IsFilteredOut(rule.Filters))
-                    {
-                        continue;
-                    }
-
-                    if (!rule.Condition.IsNull() && !_conditionEvaluator.EvalCondition(Attributes, rule.Condition, _savedGroups))
-                    {
-                        _logger.LogDebug("Rule {RuleIndex}: attribute condition did not match, continuing", ruleIndex);
-                        continue;
-                    }
-
-                    if (!rule.Force.IsNull())
-                    {
-                        if (!IsIncludedInRollout(rule.Seed ?? featureId, rule.HashAttribute, rule.Range, rule.Coverage, rule.HashVersion))
-                        {
-                            _logger.LogDebug("Rule {RuleIndex}: excluded by rollout/coverage, continuing", ruleIndex);
-                            continue;
-                        }
-
-                        if (_trackingCallback != null && rule.Tracks?.Any() == true)
-                        {
-                            foreach (var trackData in rule.Tracks)
-                            {
-                                try
-                                {
-                                    _trackingCallback?.Invoke(trackData.Experiment, trackData.Result);
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, $"Encountered unhandled exception in tracking callback for feature ID '{featureId}'");
-                                }
-                            }
-                        }
-
-                        NotifySubscribers(null, new ExperimentResult
-                        {
-                            InExperiment = false,
-                            Value = rule.Force
-                        });
-
-                        _logger.LogDebug("Rule {RuleIndex}: returning forced value for feature '{FeatureId}'", ruleIndex, featureId);
-                        return GetFeatureResult(rule.Force, FeatureResult.SourceId.Force);
-                    }
-
-                    var experiment = new Experiment
-                    {
-                        Variations = rule.Variations,
-                        Key = rule.Key ?? featureId,
-                        Coverage = rule.Coverage,
-                        Weights = rule.Weights,
-                        HashAttribute = rule.HashAttribute,
-                        FallbackAttribute = rule.FallbackAttribute,
-                        DisableStickyBucketing = rule.DisableStickyBucketing,
-                        BucketVersion = rule.BucketVersion,
-                        MinBucketVersion = rule.MinBucketVersion,
-                        Namespace = rule.Namespace,
-                        Meta = rule.Meta,
-                        Ranges = rule.Ranges,
-                        Name = rule.Name,
-                        Phase = rule.Phase,
-                        Seed = rule.Seed,
-                        Filters = rule.Filters,
-                        HashVersion = rule.HashVersion,
-                        Condition = rule.Condition
-                    };
-
-                    var result = RunExperiment(experiment, featureId);
-
-                    TryAssignExperimentResult(experiment, result);
-
-                    if (!result.InExperiment || result.Passthrough)
-                    {
-                        continue;
-                    }
-
-                    NotifySubscribers(experiment, result);
-
-                    return GetFeatureResult(result.Value, FeatureResult.SourceId.Experiment, experiment, result);
-                }
-
-                _logger.LogDebug("No rules matched for feature '{FeatureId}', returning default value", featureId);
-                return GetFeatureResult(feature.DefaultValue ?? null, FeatureResult.SourceId.DefaultValue);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Encountered an unhandled exception while executing '{nameof(EvalFeature)}'");
-
-                if (!Features.TryGetValue(featureId, out Feature feature))
-                {
-                    return GetFeatureResult(null, FeatureResult.SourceId.UnknownFeature);
-                }
-
-                return GetFeatureResult(feature.DefaultValue ?? null, FeatureResult.SourceId.DefaultValue);
-            }
+            var context = BuildEvaluationContext();
+            return _featureEvaluator.EvaluateFeature(featureId, context);
         }
 
         /// <inheritdoc />
@@ -1308,6 +1159,31 @@ namespace GrowthBook
                     }
                 });
             }
+        }
+
+        private EvaluationContext BuildEvaluationContext()
+        {
+            var global = new GlobalContext
+            {
+                Features = Features,
+                SavedGroups = _savedGroups,
+                Experiments = Experiments,
+                Enabled = Enabled,
+                QaMode = _qaMode,
+                ForcedVariations = ForcedVariations,
+                TrackingCallback = _trackingCallback,
+                OnExperimentEval = (exp, res) => TryAssignExperimentResult(exp, res),
+                StickyBucketService = _stickyBucketService
+            };
+
+            var user = new UserContext
+            {
+                Attributes = Attributes,
+                StickyBucketAssignmentDocs = _stickyBucketAssignmentDocs,
+                ForcedVariations = null
+            };
+
+            return new EvaluationContext(global, user);
         }
     }
 }

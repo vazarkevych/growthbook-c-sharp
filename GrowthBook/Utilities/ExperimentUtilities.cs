@@ -380,5 +380,63 @@ namespace GrowthBook.Utilities
         }
 
         public static string GetStickyBucketExperimentKey(string key, int bucketVersion) => $"{key}__{bucketVersion}";
+
+         public static bool IsFilteredOut(IEnumerable<Filter> filters, JObject attributes)
+        {
+            foreach (var filter in filters)
+            {
+                (_, var hashValue) = attributes.GetHashAttributeAndValue(filter.Attribute);
+
+                if (hashValue.IsNullOrWhitespace())
+                {
+                    return true;
+                }
+
+                var bucket = HashUtilities.Hash(filter.Seed, hashValue, filter.HashVersion);
+
+                var isInAnyRange = filter.Ranges.Any(x => ExperimentUtilities.InRange(bucket.Value, x));
+
+                if (!isInAnyRange)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsIncludedInRollout(string seed, JObject attributes, string hashAttribute = null, BucketRange range = null, double? coverage = null, int? hashVersion = null)
+        {
+            if (coverage == null && range == null)
+            {
+                return true;
+            }
+
+            if (range is null && coverage == 0)
+            {
+                return false;
+            }
+
+            (_, var hashValue) = attributes.GetHashAttributeAndValue(hashAttribute);
+
+            if (hashValue is null)
+            {
+                return false;
+            }
+
+            var bucket = HashUtilities.Hash(seed, hashValue, hashVersion ?? 1);
+
+            if (range != null)
+            {
+                return ExperimentUtilities.InRange(bucket.Value, range);
+            }
+
+            if (coverage != null)
+            {
+                return bucket <= coverage;
+            }
+
+            return true;
+        }
     }
 }
