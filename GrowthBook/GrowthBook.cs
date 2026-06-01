@@ -46,8 +46,10 @@ namespace GrowthBook
         private readonly Context _context;
         private JObject _previousAttributes;
         private IDictionary<string, int> _previousForcedVariations;
+
         private readonly List<Action<Experiment, ExperimentResult>> _subscribers
             = new List<Action<Experiment, ExperimentResult>>();
+
         private readonly List<Func<Experiment, ExperimentResult, Task>> _asyncSubscribers
             = new List<Func<Experiment, ExperimentResult, Task>>();
 
@@ -72,7 +74,8 @@ namespace GrowthBook
             _assigned = new Dictionary<string, ExperimentAssignment>();
             _tracked = new ConcurrentDictionary<string, byte>();
             _stickyBucketService = context.StickyBucketService;
-            _stickyBucketAssignmentDocs = context.StickyBucketAssignmentDocs ?? new Dictionary<string, StickyAssignmentsDocument>();
+            _stickyBucketAssignmentDocs = context.StickyBucketAssignmentDocs ??
+                                          new Dictionary<string, StickyAssignmentsDocument>();
             _savedGroups = context.SavedGroups;
             _previousAttributes = context.Attributes?.DeepClone() as JObject;
             _previousForcedVariations = context.ForcedVariations?.ToDictionary(k => k.Key, v => v.Value);
@@ -127,7 +130,8 @@ namespace GrowthBook
                 var featureRefreshLogger = _loggerFactory.CreateLogger<FeatureRefreshWorker>();
                 var featureRepositoryLogger = _loggerFactory.CreateLogger<FeatureRepository>();
 
-                var featureRefreshWorker = new FeatureRefreshWorker(featureRefreshLogger, httpClientFactory, config, featureCache);
+                var featureRefreshWorker =
+                    new FeatureRefreshWorker(featureRefreshLogger, httpClientFactory, config, featureCache);
 
                 IRemoteEvaluationService remoteEvaluationService = null;
                 if (context.RemoteEval)
@@ -136,7 +140,8 @@ namespace GrowthBook
                     remoteEvaluationService = new RemoteEvaluationService(remoteEvaluationLogger, httpClientFactory);
                 }
 
-                _featureRepository = new FeatureRepository(featureRepositoryLogger, featureCache, featureRefreshWorker, remoteEvaluationService);
+                _featureRepository = new FeatureRepository(featureRepositoryLogger, featureCache, featureRefreshWorker,
+                    remoteEvaluationService);
                 _ownsFeatureRepository = true;
             }
 
@@ -191,6 +196,7 @@ namespace GrowthBook
                     {
                         _assigned.Clear();
                     }
+
                     _tracked.Clear();
                     _subscribers.Clear();
                     _asyncSubscribers.Clear();
@@ -204,6 +210,7 @@ namespace GrowthBook
                         disposableFactory.Dispose();
                     }
                 }
+
                 _disposedValue = true;
             }
         }
@@ -417,7 +424,6 @@ namespace GrowthBook
         }
 
 
-
         /// <inheritdoc />
         public T GetFeatureValue<T>(string key, T fallback, bool alwaysLoadFeatures = false)
         {
@@ -436,7 +442,8 @@ namespace GrowthBook
         }
 
         /// <inheritdoc />
-        public async Task<T> GetFeatureValueAsync<T>(string key, T fallback, CancellationToken? cancellationToken = null)
+        public async Task<T> GetFeatureValueAsync<T>(string key, T fallback,
+            CancellationToken? cancellationToken = null)
         {
             var result = await EvalFeatureAsync(key, cancellationToken);
             var value = result.Value;
@@ -482,22 +489,21 @@ namespace GrowthBook
         {
             try
             {
-                ExperimentResult result = RunExperiment(experiment, null);
-
+                var context = BuildEvaluationContext();
+                var result = _experimentEvaluator.RunExperiment(experiment, null, context);
                 TryAssignExperimentResult(experiment, result);
-
                 return result;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Encountered an unhandled exception while executing '{nameof(Run)}'");
-
                 return null;
             }
         }
 
         /// <inheritdoc />
-        public async Task LoadFeatures(GrowthBookRetrievalOptions options = null, CancellationToken? cancellationToken = null)
+        public async Task LoadFeatures(GrowthBookRetrievalOptions options = null,
+            CancellationToken? cancellationToken = null)
         {
             var result = await LoadFeaturesWithResult(options, cancellationToken);
 
@@ -510,7 +516,8 @@ namespace GrowthBook
         }
 
         /// <inheritdoc />
-        public async Task<FeatureLoadResult> LoadFeaturesWithResult(GrowthBookRetrievalOptions options = null, CancellationToken? cancellationToken = null)
+        public async Task<FeatureLoadResult> LoadFeaturesWithResult(GrowthBookRetrievalOptions options = null,
+            CancellationToken? cancellationToken = null)
         {
             try
             {
@@ -521,7 +528,8 @@ namespace GrowthBook
                 if (_context.RemoteEval && RemoteEvaluationUtilities.IsValidForRemoteEvaluation(_context))
                 {
                     var currentContext = CreateCurrentContext();
-                    features = await _featureRepository.GetFeaturesWithContext(currentContext, options, cancellationToken);
+                    features = await _featureRepository.GetFeaturesWithContext(currentContext, options,
+                        cancellationToken);
                 }
                 else
                 {
@@ -639,361 +647,6 @@ namespace GrowthBook
             }
         }
 
-        private ExperimentResult RunExperiment(Experiment experiment, string featureId)
-        {
-            // 1. Abort if there aren't enough variations present.
-
-            if (experiment.Variations.IsNull() || experiment.Variations.Count < 2)
-            {
-                _logger.LogDebug("Aborting experiment, not enough variations are present");
-                return GetExperimentResult(experiment, featureId: featureId);
-            }
-
-            // 2. Abort if GrowthBook is currently disabled.
-
-            if (!Enabled)
-            {
-                _logger.LogDebug("Aborting experiment, GrowthBook is not currently enabled");
-                return GetExperimentResult(experiment, featureId: featureId);
-            }
-
-            // NOTE: The improved URL targeting mentioned is only applicable on the front end.
-            //       There are potential frontend usages for the C# SDK, but until there is more clarity and more robust tests
-            //       in the JSON test suite to ensure we get an appropriate implementation in place we are going to hold off on this.
-
-            // 2.6 Use improved URL targeting if specified.
-
-            //if (experiment.UrlPatterns?.Count > 0 && !ExperimentUtilities.IsUrlTargeted(Url ?? string.Empty, experiment.UrlPatterns))
-            //{
-            //    _logger.LogDebug("Skipping due to URL targeting");
-            //    return GetExperimentResult(experiment, featureId: featureId);
-            //}
-
-            // 3. Use the override value from the query string if one is specified.
-
-            if (!Url.IsNullOrWhitespace())
-            {
-                var overrideValue = ExperimentUtilities.GetQueryStringOverride(experiment.Key, Url, experiment.Variations.Count);
-
-                if (overrideValue != null)
-                {
-                    _logger.LogDebug("Found an override value in the query string, creating experiment result from it");
-                    return GetExperimentResult(experiment, overrideValue.Value, featureId: featureId);
-                }
-            }
-
-            // 4. Use the forced variation value instead if one is specified for this experiment.
-
-            if (ForcedVariations.TryGetValue(experiment.Key, out var variation))
-            {
-                _logger.LogDebug("Found a forced variation value, creating experiment result from it");
-                return GetExperimentResult(experiment, variation, featureId: featureId);
-            }
-
-            // 5. Abort if the experiment isn't currently active.
-
-            if (!experiment.Active)
-            {
-                _logger.LogDebug("Aborting experiment, experiment is not currently active");
-                return GetExperimentResult(experiment, featureId: featureId);
-            }
-
-            // 6. Abort if we're unable to generate a hash identifying this run.
-
-            (var hashAttribute, var hashValue) = Attributes.GetHashAttributeAndValue(experiment.HashAttribute);
-
-            if (hashValue.IsNullOrWhitespace())
-            {
-                // Check if a fallback attribute for sticky bucketing exists and use it if possible.
-
-                var hasFallback = !experiment.FallbackAttribute.IsNullOrWhitespace();
-
-                if (hasFallback)
-                {
-                    (hashAttribute, hashValue) = Attributes.GetHashAttributeAndValue(experiment.FallbackAttribute);
-                }
-                else
-                {
-                    _logger.LogDebug("Aborting experiment, unable to locate a value for the experiment hash attribute \'{ExperimentHashAttribute}\'", experiment.HashAttribute);
-                    return GetExperimentResult(experiment, featureId: featureId);
-                }
-            }
-
-            // 6.5 When sticky bucketing is permitted, determine if they already have a value and use it if possible.
-
-            var assignedBucket = -1;
-            var foundStickyBucket = false;
-            var stickyBucketVersionIsBlocked = false;
-
-            if (_stickyBucketService != null && !experiment.DisableStickyBucketing)
-            {
-                var bucketVersion = experiment.BucketVersion;
-                var minBucketVersion = experiment.MinBucketVersion;
-                var meta = experiment.Meta ?? new List<VariationMeta>();
-
-                var stickyBucketVariation = ExperimentUtilities.GetStickyBucketVariation(
-                    experiment,
-                    bucketVersion,
-                    minBucketVersion,
-                    meta,
-                    Attributes,
-                    _stickyBucketAssignmentDocs
-                );
-
-                foundStickyBucket = stickyBucketVariation.VariationIndex >= 0;
-                assignedBucket = stickyBucketVariation.VariationIndex;
-                stickyBucketVersionIsBlocked = stickyBucketVariation.IsVersionBlocked;
-            }
-
-            if (!foundStickyBucket)
-            {
-                // 7. Abort if this run is ineligible to be included in the experiment.
-
-                if (experiment.Filters?.Any() == true)
-                {
-                    if (IsFilteredOut(experiment.Filters))
-                    {
-                        _logger.LogDebug("Aborting experiment, filters have been applied and matched this run");
-                        return GetExperimentResult(experiment, featureId: featureId);
-                    }
-                }
-                else if (experiment.Namespace != null && !ExperimentUtilities.InNamespace(hashValue, experiment.Namespace))
-                {
-                    _logger.LogDebug("Aborting experiment, not within the specified namespace \'{ExperimentNamespace}\'", experiment.Namespace);
-                    return GetExperimentResult(experiment, featureId: featureId);
-                }
-
-                // 8. Abort if the conditions for the experiment prohibit this.
-
-                if (!experiment.Condition.IsNull())
-                {
-                    if (!_conditionEvaluator.EvalCondition(Attributes, experiment.Condition, _savedGroups))
-                    {
-                        _logger.LogDebug("Aborting experiment, associated conditions have prohibited participation");
-                        return GetExperimentResult(experiment, featureId: featureId);
-                    }
-                }
-
-                if (experiment.ParentConditions != null)
-                {
-                    foreach (var parentCondition in experiment.ParentConditions)
-                    {
-                        // Use a fresh copy of the evaluated feature ids to avoid
-                        // incorrectly flagging repeated prerequisite evaluations as cycles
-                        var parentResult = EvaluateFeature(parentCondition.Id, new HashSet<string>());
-
-                        if (parentResult.Source == FeatureResult.SourceId.CyclicPrerequisite)
-                        {
-                            return GetExperimentResult(experiment, featureId: featureId);
-                        }
-
-                        var evaluationObject = new JObject { ["value"] = parentResult.Value };
-
-                        if (!_conditionEvaluator.EvalCondition(evaluationObject, parentCondition.Condition ?? new JObject(), _savedGroups))
-                        {
-                            return GetExperimentResult(experiment, featureId: featureId);
-                        }
-                    }
-                }
-            }
-
-            // 9. Attempt to assign this run to an experiment variation.
-
-            var hash = HashUtilities.Hash(experiment.Seed ?? experiment.Key, hashValue, experiment.HashVersion);
-
-            if (hash is null)
-            {
-                return GetExperimentResult(experiment, featureId: featureId);
-            }
-
-            if (!foundStickyBucket)
-            {
-                var ranges = experiment.Ranges?.Count > 0 ? experiment.Ranges : ExperimentUtilities.GetBucketRanges(experiment.Variations?.Count ?? 0, experiment.Coverage ?? 1, experiment.Weights ?? new List<double>());
-                assignedBucket = ExperimentUtilities.ChooseVariation(hash.Value, ranges.ToList());
-
-                // 10. Abort if a variation could not be assigned.
-
-                if (assignedBucket == -1)
-                {
-                    _logger.LogDebug("Aborting experiment, unable to assign this run to an experiment variation");
-                    return GetExperimentResult(experiment, featureId: featureId);
-                }
-            }
-
-            // 9.5 Unenroll if any prior sticky buckets are blocked by version.
-
-            if (stickyBucketVersionIsBlocked)
-            {
-                return GetExperimentResult(experiment, featureId: featureId, wasStickyBucketUsed: true);
-            }
-
-            // 11. Use the forced value for the experiment if one is specified.
-
-            if (experiment.Force != null)
-            {
-                _logger.LogDebug("Found a forced value, creating experiment result from it");
-                return GetExperimentResult(experiment, experiment.Force.Value, featureId: featureId);
-            }
-
-            // 12. Abort if we're currently operating in QA mode.
-
-            if (_qaMode)
-            {
-                _logger.LogDebug("Aborting experiment, this run is in QA mode");
-                return GetExperimentResult(experiment, featureId: featureId);
-            }
-
-            // 13. Run the experiment and track the result if we haven't seen this one before.
-
-            _logger.LogInformation("Participation in experiment with key \'{ExperimentKey}\' is allowed, running the experiment", experiment.Key);
-            var result = GetExperimentResult(experiment, assignedBucket, true, featureId, hash, foundStickyBucket);
-
-            // 13.5 Store the value for later if sticky bucketing is enabled.
-
-            if (_stickyBucketService != null && !experiment.DisableStickyBucketing)
-            {
-                var experimentKey = ExperimentUtilities.GetStickyBucketExperimentKey(experiment.Key, experiment.BucketVersion);
-
-                var assignments = new Dictionary<string, string>
-                {
-                    [experimentKey] = result.Key
-                };
-
-                (var document, var isChanged) = ExperimentUtilities.GenerateStickyBucketAssignment(_stickyBucketService, hashAttribute, hashValue, assignments);
-
-                if (isChanged)
-                {
-                    _stickyBucketService.SaveAssignments(document);
-                    _stickyBucketAssignmentDocs[document.FormattedAttribute] = document;
-                }
-            }
-
-            TryToTrack(experiment, result);
-
-            return result;
-        }
-
-        private FeatureResult GetFeatureResult(JToken value, string source, Experiment experiment = null, ExperimentResult experimentResult = null)
-        {
-            return new FeatureResult
-            {
-                Value = value,
-                Source = source,
-                Experiment = experiment,
-                ExperimentResult = experimentResult
-            };
-        }
-
-        private bool IsFilteredOut(IEnumerable<Filter> filters)
-        {
-            foreach (var filter in filters)
-            {
-                (_, var hashValue) = Attributes.GetHashAttributeAndValue(filter.Attribute);
-
-                if (hashValue.IsNullOrWhitespace())
-                {
-                    _logger.LogDebug("Attributes are missing a filter\'s hash attribute of \'{FilterAttribute}\', marking as filtered out", filter.Attribute);
-                    return true;
-                }
-
-                var bucket = HashUtilities.Hash(filter.Seed, hashValue, filter.HashVersion);
-
-                var isInAnyRange = filter.Ranges.Any(x => ExperimentUtilities.InRange(bucket.Value, x));
-
-                if (!isInAnyRange)
-                {
-                    _logger.LogDebug("This run is not in any range associated with a filter, marking as filtered out");
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool IsIncludedInRollout(string seed, string hashAttribute = null, BucketRange range = null, double? coverage = null, int? hashVersion = null)
-        {
-            if (coverage == null && range == null)
-            {
-                _logger.LogDebug("No coverage value or range was specified, marking as included in rollout");
-                return true;
-            }
-
-            if (range is null && coverage == 0)
-            {
-                _logger.LogDebug("Range and coverage were not set, marking as not included in rollout");
-                return false;
-            }
-
-            (_, var hashValue) = Attributes.GetHashAttributeAndValue(hashAttribute);
-
-            if (hashValue is null)
-            {
-                _logger.LogDebug("Attributes do not have a value for hash attribute \'{HashAttribute}\', marking as excluded from rollout", hashAttribute);
-                return false;
-            }
-
-            var bucket = HashUtilities.Hash(seed, hashValue, hashVersion ?? 1);
-
-            if (range != null)
-            {
-                return ExperimentUtilities.InRange(bucket.Value, range);
-            }
-
-            if (coverage != null)
-            {
-                return bucket <= coverage;
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Generates an experiment result from an experiment.
-        /// </summary>
-        /// <param name="experiment">The experiment to get the result from.</param>
-        /// <param name="variationIndex">The variation id, if specified.</param>
-        /// <param name="hashUsed">Whether or not a hash was used in assignment.</param>
-        /// <returns>The experiment result.</returns>
-        private ExperimentResult GetExperimentResult(Experiment experiment, int variationIndex = -1, bool hashUsed = false, string featureId = null, double? bucketHash = null, bool wasStickyBucketUsed = false)
-        {
-            var inExperiment = true;
-
-            if (variationIndex < 0 || variationIndex >= experiment.Variations.Count)
-            {
-                variationIndex = 0;
-                inExperiment = false;
-            }
-
-            var canUseStickyBucketing = _stickyBucketService != null && !experiment.DisableStickyBucketing;
-            var fallbackAttribute = canUseStickyBucketing ? experiment.FallbackAttribute : default;
-
-            (var hashAttribute, var hashValue) = Attributes.GetHashAttributeAndValue(experiment.HashAttribute, fallbackAttributeKey: fallbackAttribute);
-
-            var meta = experiment.Meta?.Count > 0 ? experiment.Meta[variationIndex] : null;
-
-            var result = new ExperimentResult
-            {
-                Key = meta?.Key ?? variationIndex.ToString(),
-                FeatureId = featureId,
-                InExperiment = inExperiment,
-                HashAttribute = hashAttribute,
-                HashUsed = hashUsed,
-                HashValue = hashValue,
-                Value = experiment.Variations is null ? null : experiment.Variations[variationIndex],
-                VariationId = variationIndex,
-                Name = meta?.Name,
-                Passthrough = meta?.Passthrough ?? false,
-                Bucket = bucketHash ?? 0d,
-                StickyBucketUsed = wasStickyBucketUsed
-            };
-
-            result.Name = meta?.Name;
-            result.Passthrough = meta?.Passthrough ?? false;
-            result.Bucket = bucketHash ?? 0d;
-
-            return result;
-        }
-
         /// <summary>
         /// Calls the tracking callback function to track experiment assignment.
         /// </summary>
@@ -1030,12 +683,14 @@ namespace GrowthBook
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Encountered unhandled exception during tracking callback for experiment with combined key \'{Key}\'", key);
+                    _logger.LogError(ex,
+                        "Encountered unhandled exception during tracking callback for experiment with combined key \'{Key}\'",
+                        key);
                 }
             }
         }
 
-         /// <summary>
+        /// <summary>
         /// Validates that remote evaluation configuration is correct.
         /// </summary>
         /// <param name="context">The context to validate</param>
@@ -1055,7 +710,9 @@ namespace GrowthBook
 
             if (!string.IsNullOrWhiteSpace(context.DecryptionKey))
             {
-                throw new ArgumentException("RemoteEval cannot be used with DecryptionKey - features are evaluated server-side", nameof(context));
+                throw new ArgumentException(
+                    "RemoteEval cannot be used with DecryptionKey - features are evaluated server-side",
+                    nameof(context));
             }
         }
 
@@ -1171,7 +828,7 @@ namespace GrowthBook
                 Enabled = Enabled,
                 QaMode = _qaMode,
                 ForcedVariations = ForcedVariations,
-                TrackingCallback = _trackingCallback,
+                TrackingCallback = (exp, res) => TryToTrack(exp, res),
                 OnExperimentEval = (exp, res) => TryAssignExperimentResult(exp, res),
                 StickyBucketService = _stickyBucketService
             };
@@ -1180,7 +837,8 @@ namespace GrowthBook
             {
                 Attributes = Attributes,
                 StickyBucketAssignmentDocs = _stickyBucketAssignmentDocs,
-                ForcedVariations = null
+                ForcedVariations = null,
+                Url = Url
             };
 
             return new EvaluationContext(global, user);

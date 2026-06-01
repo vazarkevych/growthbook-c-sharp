@@ -259,6 +259,13 @@ namespace GrowthBook.Providers
             return result;
         }
 
+        /// <summary>
+        /// Generates an experiment result from an experiment.
+        /// </summary>
+        /// <param name="experiment">The experiment to get the result from.</param>
+        /// <param name="variationIndex">The variation id, if specified.</param>
+        /// <param name="hashUsed">Whether or not a hash was used in assignment.</param>
+        /// <returns>The experiment result.</returns>
         private ExperimentResult GetExperimentResult(Experiment experiment, EvaluationContext context, int variationIndex = -1, bool hashUsed = false, string featureId = null, double? bucketHash = null, bool wasStickyBucketUsed = false)
         {
             var inExperiment = true;

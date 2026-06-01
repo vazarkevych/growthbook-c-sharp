@@ -40,6 +40,7 @@ namespace GrowthBook.MultiUser
             }
 
             _loggerFactory.CreateLogger<ConditionEvaluationProvider>();
+            _conditionEvaluator = new ConditionEvaluationProvider(_loggerFactory.CreateLogger<ConditionEvaluationProvider>());
             _experimentEvaluator = new ExperimentEvaluationProvider(
                 _loggerFactory.CreateLogger<ExperimentEvaluationProvider>(), _conditionEvaluator);
             _featureEvaluator = new FeatureEvaluationProvider(
