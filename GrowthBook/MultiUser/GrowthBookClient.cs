@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GrowthBook.Api;
+using GrowthBook.Extensions;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -108,19 +110,32 @@ namespace GrowthBook.MultiUser
 
         private GrowthBook CreateEvaluator(UserContext userContext)
         {
+            var stickyBucketService = userContext?.StickyBucketService ?? _options.StickyBucketService;
+            var stickyBucketDocs = userContext?.StickyBucketAssignmentDocs;
+
+            if (stickyBucketService != null && stickyBucketDocs == null)
+            {
+                var attrs = userContext?.Attributes?.Properties()
+                    .Where(p => !p.Value.IsNull() && !string.IsNullOrEmpty(p.Value.ToString()))
+                    .Select(p => $"{p.Name}||{p.Value}");
+
+                stickyBucketDocs = attrs != null
+                    ? stickyBucketService.GetAllAssignments(attrs)
+                    : null;
+            }
+
             return new GrowthBook(new Context
             {
-                Features = _currentFeatures, // з пам'яті, не HTTP
+                Features = _currentFeatures,
                 Enabled = _options.Enabled,
                 QaMode = _options.QaMode,
-                Attributes = userContext.Attributes ?? new JObject(),
-                Url = userContext.Url,
-                ForcedVariations = userContext.ForcedVariations,
-                TrackingCallback = userContext.TrackingCallback ?? _options.TrackingCallback,
-                StickyBucketService = userContext.StickyBucketService,
-                StickyBucketAssignmentDocs = userContext.StickyBucketAssignmentDocs,
+                Attributes = userContext?.Attributes ?? new JObject(),
+                Url = userContext?.Url,
+                ForcedVariations = userContext?.ForcedVariations,
+                TrackingCallback = userContext?.TrackingCallback ?? _options.TrackingCallback,
+                StickyBucketService = stickyBucketService,
+                StickyBucketAssignmentDocs = stickyBucketDocs,
                 LoggerFactory = _loggerFactory
-                // НЕ передаємо ClientKey → GrowthBook не створює repository
             });
         }
 

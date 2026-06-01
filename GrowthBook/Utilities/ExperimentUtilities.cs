@@ -330,7 +330,7 @@ namespace GrowthBook.Utilities
             }
 
             var variationIndex = FindVariationIndex(meta, variationKey);
-                        
+
             return new StickyBucketVariation(variationIndex, isVersionBlocked: false);
         }
 
@@ -353,7 +353,7 @@ namespace GrowthBook.Utilities
 
             // We're grabbing any fallback values first so that the original can override them if present as well.
 
-            if (fallbackKey.HasValue && stickyAssignmentDocs.TryGetValue(fallbackKey.FormattedAttribute, out var fallbackDocument))
+            if (fallbackKey.HasValue && !string.IsNullOrEmpty(hashValueWithFallback) && stickyAssignmentDocs.TryGetValue(fallbackKey.FormattedAttribute, out var fallbackDocument))
             {
                 pendingAssignments.Add(fallbackDocument.Assignments);
             }

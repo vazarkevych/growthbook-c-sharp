@@ -1,4 +1,5 @@
 using System;
+using GrowthBook.Services;
 using Microsoft.Extensions.Logging;
 
 namespace GrowthBook.MultiUser
@@ -15,5 +16,6 @@ namespace GrowthBook.MultiUser
         public IGrowthBookFeatureRepository FeatureRepository { get; set; }
         public Action<bool> OnFeaturesRefreshed { get; set; }
         public Action<Experiment, ExperimentResult> TrackingCallback { get; set; }
+        public IStickyBucketService StickyBucketService { get; set; }
     }
 }
