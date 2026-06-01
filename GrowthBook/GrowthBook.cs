@@ -544,6 +544,7 @@ namespace GrowthBook
                 }
 
                 Features = features;
+                RefreshStickyBuckets();
                 var featureCount = Features.Count;
 
                 _logger.LogInformation($"Loading features has completed, retrieved '{featureCount}' features");
@@ -572,46 +573,13 @@ namespace GrowthBook
         {
             if (_stickyBucketService == null) return;
 
-            var formattedKeys = DeriveIdentifierAttributes();
+            var formattedKeys = ExperimentUtilities.DeriveIdentifierAttributes(Features, Experiments, Attributes);
             var docs = _stickyBucketService.GetAllAssignments(formattedKeys);
 
             foreach (var kvp in docs)
             {
                 _stickyBucketAssignmentDocs[kvp.Key] = kvp.Value;
             }
-        }
-
-        private IEnumerable<string> DeriveIdentifierAttributes()
-        {
-            var attributeNames = new HashSet<string>();
-
-            // Scan feature rules — only rules with variations use sticky bucketing
-            foreach (var feature in Features.Values)
-            {
-                foreach (var rule in feature?.Rules ?? Enumerable.Empty<FeatureRule>())
-                {
-                    if (!rule.Variations.IsNull())
-                    {
-                        attributeNames.Add(rule.HashAttribute ?? "id");
-                        if (!string.IsNullOrEmpty(rule.FallbackAttribute))
-                            attributeNames.Add(rule.FallbackAttribute);
-                    }
-                }
-            }
-
-            // Scan experiments
-            foreach (var experiment in Experiments ?? Enumerable.Empty<Experiment>())
-            {
-                attributeNames.Add(experiment.HashAttribute ?? "id");
-                if (!string.IsNullOrEmpty(experiment.FallbackAttribute))
-                    attributeNames.Add(experiment.FallbackAttribute);
-            }
-
-            // Map attribute names to current user values and format as "name||value"
-            return attributeNames
-                .Select(name => (name, value: Attributes?[name]?.ToString()))
-                .Where(pair => !string.IsNullOrEmpty(pair.value))
-                .Select(pair => $"{pair.name}||{pair.value}");
         }
 
         private void TryAssignExperimentResult(Experiment experiment, ExperimentResult result)

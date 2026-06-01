@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using GrowthBook.Api;
 using GrowthBook.Extensions;
 using GrowthBook.Providers;
+using GrowthBook.Utilities;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -39,7 +40,6 @@ namespace GrowthBook.MultiUser
                 _ownsLoggerFactory = true;
             }
 
-            _loggerFactory.CreateLogger<ConditionEvaluationProvider>();
             _conditionEvaluator = new ConditionEvaluationProvider(_loggerFactory.CreateLogger<ConditionEvaluationProvider>());
             _experimentEvaluator = new ExperimentEvaluationProvider(
                 _loggerFactory.CreateLogger<ExperimentEvaluationProvider>(), _conditionEvaluator);
@@ -138,10 +138,11 @@ namespace GrowthBook.MultiUser
 
             if (stickyBucketService != null && stickyBucketDocs == null)
             {
-                var attrs = userContext?.Attributes?.Properties()
-                    .Where(p => !p.Value.IsNull() && !string.IsNullOrEmpty(p.Value.ToString()))
-                    .Select(p => $"{p.Name}||{p.Value}");
-                stickyBucketDocs = attrs != null ? stickyBucketService.GetAllAssignments(attrs) : null;
+                var attrs = ExperimentUtilities.DeriveIdentifierAttributes(
+                    _currentFeatures,
+                    null,
+                    userContext?.Attributes ?? new JObject());
+                stickyBucketDocs = stickyBucketService.GetAllAssignments(attrs);
             }
 
             var global = new GlobalContext
@@ -159,6 +160,7 @@ namespace GrowthBook.MultiUser
                 ForcedVariations = userContext?.ForcedVariations,
                 TrackingCallback = userContext?.TrackingCallback,
                 StickyBucketService = stickyBucketService,
+                Url = userContext?.Url,
                 StickyBucketAssignmentDocs = stickyBucketDocs ?? new Dictionary<string, StickyAssignmentsDocument>()
             };
 
