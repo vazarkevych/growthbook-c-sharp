@@ -14,6 +14,7 @@ namespace GrowthBook.MultiUser
         public bool QaMode { get; set; }
         public IDictionary<string, int> ForcedVariations { get; set; } = new Dictionary<string, int>();
         public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
+        public JObject Attributes { get; set; }
         public Action<Experiment, ExperimentResult> TrackingCallback { get; set; }
         internal Action<Experiment, ExperimentResult> OnExperimentEval { get; set; }
         public IStickyBucketService StickyBucketService { get; set; }

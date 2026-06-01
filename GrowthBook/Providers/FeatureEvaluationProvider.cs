@@ -43,6 +43,12 @@ namespace GrowthBook.Providers
                 _logger.LogDebug("Evaluating feature '{FeatureId}' with {RuleCount} rules", featureId,
                     feature?.Rules?.Count ?? 0);
 
+                var forcedValues = context.GetForcedFeatureValues();
+                if (forcedValues != null && forcedValues.TryGetValue(featureId, out var forcedValue))
+                {
+                    return GetFeatureResult(forcedValue, "override");
+                }
+
                 var ruleIndex = 0;
 
                 var snapshot = new HashSet<string>(context.Stack.EvaluatedFeatures);

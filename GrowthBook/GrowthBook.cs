@@ -46,6 +46,7 @@ namespace GrowthBook
         private readonly Context _context;
         private JObject _previousAttributes;
         private IDictionary<string, int> _previousForcedVariations;
+        public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
 
         private readonly List<Action<Experiment, ExperimentResult>> _subscribers
             = new List<Action<Experiment, ExperimentResult>>();
@@ -144,6 +145,7 @@ namespace GrowthBook
                     remoteEvaluationService);
                 _ownsFeatureRepository = true;
             }
+            ForcedFeatureValues = context.ForcedFeatureValues;
 
             RefreshStickyBuckets();
         }
@@ -798,7 +800,8 @@ namespace GrowthBook
                 ForcedVariations = ForcedVariations,
                 TrackingCallback = (exp, res) => TryToTrack(exp, res),
                 OnExperimentEval = (exp, res) => TryAssignExperimentResult(exp, res),
-                StickyBucketService = _stickyBucketService
+                StickyBucketService = _stickyBucketService,
+                ForcedFeatureValues = ForcedFeatureValues
             };
 
             var user = new UserContext
@@ -806,7 +809,8 @@ namespace GrowthBook
                 Attributes = Attributes,
                 StickyBucketAssignmentDocs = _stickyBucketAssignmentDocs,
                 ForcedVariations = null,
-                Url = Url
+                Url = Url,
+                ForcedFeatureValues = ForcedFeatureValues
             };
 
             return new EvaluationContext(global, user);

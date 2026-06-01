@@ -151,7 +151,10 @@ namespace GrowthBook.MultiUser
                 Enabled = _options.Enabled,
                 QaMode = _options.QaMode,
                 TrackingCallback = _options.TrackingCallback,
-                StickyBucketService = stickyBucketService
+                StickyBucketService = stickyBucketService,
+                ForcedVariations = _options.GlobalForcedVariations,
+                ForcedFeatureValues = _options.GlobalForcedFeatureValues,
+                Attributes = _options.GlobalAttributes
             };
 
             var user = new UserContext

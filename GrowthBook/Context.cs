@@ -161,6 +161,9 @@ namespace GrowthBook
         /// </summary>
         public string[] CacheKeyAttributes { get; set; }
 
+        public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
+
+
         /// <summary>
         /// Sets user attributes from an IDictionary.
         /// </summary>
@@ -208,7 +211,8 @@ namespace GrowthBook
                 CachePath = this.CachePath,
                 RemoteEval = this.RemoteEval,
                 CacheKeyAttributes = this.CacheKeyAttributes?.ToArray(),
-                ForcedFeatures = this.ForcedFeatures
+                ForcedFeatures = this.ForcedFeatures,
+                ForcedFeatureValues = this.ForcedFeatureValues
             };
             return cloned;
         }

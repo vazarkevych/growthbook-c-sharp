@@ -38,7 +38,10 @@ namespace GrowthBook.MultiUser
 
         public JObject GetAttributes()
         {
-            var result = User.Attributes?.DeepClone() as JObject ?? new JObject();
+            var result = Global.Attributes?.DeepClone() as JObject ?? new JObject();
+            if (User.Attributes != null)
+                foreach (var prop in User.Attributes.Properties())
+                    result[prop.Name] = prop.Value; // user overrides global
             if (User.AttributeOverrides != null)
                 foreach (var prop in User.AttributeOverrides.Properties())
                     result[prop.Name] = prop.Value;
