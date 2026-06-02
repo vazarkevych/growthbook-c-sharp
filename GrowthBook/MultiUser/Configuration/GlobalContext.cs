@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using GrowthBook.Services;
 using Newtonsoft.Json.Linq;
 
-namespace GrowthBook.MultiUser
+namespace GrowthBook.MultiUser.Configuration
 {
+    /// <summary>Shared singleton state for an evaluation: features, global config, and callbacks.</summary>
     internal sealed class GlobalContext
     {
         public IDictionary<string, Feature> Features { get; set; } = new Dictionary<string, Feature>();

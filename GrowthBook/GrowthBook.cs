@@ -12,7 +12,7 @@ using GrowthBook.Providers;
 using GrowthBook.Services;
 using GrowthBook.Utilities;
 using GrowthBook.Exceptions;
-using GrowthBook.MultiUser;
+using GrowthBook.MultiUser.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -46,6 +46,9 @@ namespace GrowthBook
         private readonly Context _context;
         private JObject _previousAttributes;
         private IDictionary<string, int> _previousForcedVariations;
+        /// <summary>
+        /// Forces specific feature values regardless of evaluation rules. Overrides defaultValue, force rules, and experiments.
+        /// </summary>
         public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
 
         private readonly List<Action<Experiment, ExperimentResult>> _subscribers

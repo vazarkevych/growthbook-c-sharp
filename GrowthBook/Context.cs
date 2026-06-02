@@ -161,6 +161,9 @@ namespace GrowthBook
         /// </summary>
         public string[] CacheKeyAttributes { get; set; }
 
+        /// <summary>
+        /// Forces specific feature values regardless of evaluation rules. Overrides defaultValue, force rules, and experiments.
+        /// </summary>
         public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
 
 

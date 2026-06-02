@@ -11,6 +11,7 @@ namespace GrowthBook
     /// Register this as a Singleton in DI — it owns one shared <see cref="IGrowthBookFeatureRepository"/>
     /// (and its background refresh worker) that all per-user <see cref="GrowthBook"/> instances reuse.
     /// </summary>
+    [Obsolete("GrowthBookFactory is deprecated. Use GrowthBookClient (GrowthBook.MultiUser) instead, which provides a cleaner multiuser API with stateless evaluators.")]
     public class GrowthBookFactory : IDisposable
     {
         private readonly Context _baseContext;

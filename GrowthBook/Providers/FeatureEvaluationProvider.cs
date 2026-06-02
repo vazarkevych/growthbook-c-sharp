@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using GrowthBook.Extensions;
-using GrowthBook.MultiUser;
+using GrowthBook.MultiUser.Configuration;
 using GrowthBook.Utilities;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;

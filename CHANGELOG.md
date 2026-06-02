@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0]
+
+### Added
+- `GrowthBookClient` — new thread-safe singleton client for multiuser server-side scenarios (ASP.NET Core, Azure Functions, workers). Accepts a per-request `UserContext` for each evaluation, with no per-user object allocation.
+- `UserContext` — per-request DTO for user attributes, forced variations, forced feature values, tracking callback, and sticky bucket data.
+- `Options` — configuration class for `GrowthBookClient` with support for global attributes, forced variations, forced feature values, tracking callback, and sticky bucket service.
+- `ForcedFeatureValues` support in `Context` and `GrowthBook` for overriding feature evaluation results (source: "override").
+- `SetGlobalAttributes()`, `SetGlobalForcedVariations()`, `SetGlobalForcedFeatureValues()`, `SetTrackingCallback()` — runtime setters on `GrowthBookClient`.
+- `GetFeatures()`, `GetGlobalAttributes()` — getters on `GrowthBookClient`.
+
+### Fixed
+- Sticky bucket assignment docs now update correctly in-memory after save.
+- Empty string fallback attribute no longer causes incorrect bucket assignment.
+- `ForcedVariations` null reference in `GrowthBook` constructor.
+- `RefreshStickyBuckets` is now called after features refresh in `LoadFeaturesWithResult`.
+
+### Deprecated
+- `GrowthBookFactory` — use `GrowthBookClient` instead.
+
 ## [1.2.0]
 
 - Added custom fields support for experiments.

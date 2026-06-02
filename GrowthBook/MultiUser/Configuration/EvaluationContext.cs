@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
-namespace GrowthBook.MultiUser
+namespace GrowthBook.MultiUser.Configuration
 {
+    /// <summary>Combines global and user context for a single stateless evaluation pass.</summary>
     internal sealed class EvaluationContext
     {
         public GlobalContext Global { get; }
@@ -16,6 +17,7 @@ namespace GrowthBook.MultiUser
             Stack = new StackContext();
         }
 
+        /// <summary>Merges global and user forced variations. User values take precedence.</summary>
         public IDictionary<string, int> GetForcedVariations()
         {
             var result = new Dictionary<string, int>();
@@ -26,6 +28,7 @@ namespace GrowthBook.MultiUser
             return result;
         }
 
+        /// <summary>Merges global and user forced feature values. User values take precedence.</summary>
         public IDictionary<string, JToken> GetForcedFeatureValues()
         {
             var result = new Dictionary<string, JToken>();
@@ -36,6 +39,7 @@ namespace GrowthBook.MultiUser
             return result;
         }
 
+        /// <summary>Merges global and user attributes. User attributes and overrides take precedence.</summary>
         public JObject GetAttributes()
         {
             var result = Global.Attributes?.DeepClone() as JObject ?? new JObject();

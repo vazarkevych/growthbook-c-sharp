@@ -11,6 +11,7 @@ Powerful feature flagging and A/B testing for C# apps using [GrowthBook](https:/
 - [Overview](#overview)
 - [Installation](#installation)
 - [Integration](#integration)
+- [GrowthBookClient (Multiuser Mode)](#growthbookclient-multiuser-mode)
 - [Usage Guide](#usage-guide)
 - [Sticky Bucketing](#sticky-bucketing)
 - [Models](#models)
@@ -118,6 +119,85 @@ To load your features from the GrowthBook API use the following example:
         }
     );
     ```
+> **Tip:** For server-side applications, consider using [`GrowthBookClient`](#growthbookclient-multiuser-mode) instead — it handles feature loading and caching automatically without manual HTTP calls.
+
+---
+
+## GrowthBookClient (Multiuser Mode)
+
+`GrowthBookClient` is a thread-safe singleton designed for server-side applications where many users are evaluated concurrently (ASP.NET Core, Azure Functions, etc.). Unlike `GrowthBook`, it holds shared state (features, configuration) and accepts a per-request `UserContext` for each evaluation — no per-user object allocation needed.
+
+### Console / Worker
+
+```csharp
+using GrowthBook.MultiUser;
+using Newtonsoft.Json.Linq;
+
+var client = new GrowthBookClient(new Options
+{
+    ClientKey = "sdk-abc123",
+    TrackingCallback = (experiment, result) =>
+        Console.WriteLine($"[tracking] {experiment.Key} → variant {result.VariationId}")
+});
+
+await client.InitializeAsync();
+
+var userContext = new UserContext
+{
+    Attributes = JObject.FromObject(new { id = "user-123", country = "US" })
+};
+
+bool isOn    = client.IsOn("my-feature", userContext);
+string theme = client.GetFeature<string>("app-theme", "light", userContext);
+```
+
+### ASP.NET Core
+
+Register `GrowthBookClient` as a singleton in `Program.cs`:
+
+```csharp
+builder.Services.AddSingleton<GrowthBookClient>(sp =>
+{
+    var client = new GrowthBookClient(new Options
+    {
+        ClientKey = "sdk-abc123",
+        OnFeaturesRefreshed = success =>
+            Console.WriteLine($"Features refreshed: {success}")
+    });
+    client.InitializeAsync().GetAwaiter().GetResult();
+    return client;
+});
+```
+
+Inject and use in a controller or service:
+
+```csharp
+public class HomeController : ControllerBase
+{
+    private readonly GrowthBookClient _gb;
+
+    public HomeController(GrowthBookClient gb) => _gb = gb;
+
+    public IActionResult Index()
+    {
+        var userContext = new UserContext
+        {
+            Attributes = JObject.FromObject(new
+            {
+                id      = User.Identity?.Name,
+                country = "US"
+            })
+        };
+
+        bool showNewDashboard = _gb.IsOn("new-dashboard", userContext);
+        return View(showNewDashboard ? "NewDashboard" : "Dashboard");
+    }
+}
+```
+
+> **When to use `GrowthBookClient` vs `GrowthBook`**
+> - Use `GrowthBookClient` for server-side multiuser apps (ASP.NET Core, workers, APIs).
+> - Use `GrowthBook` for single-user or client-side scenarios where one instance maps to one user.
 
 ---
 
@@ -135,7 +215,7 @@ Evaluate feature flags to determine their state or retrieve their values.
 
 - **Retrieve Feature Values**:
   ```csharp
-  string theme = growthBook.GetFeatureValue("app-theme");
+  string theme = growthBook.GetFeatureValue<string>("app-theme", "light");
   ```
 
 - **Evaluate a Feature with Detailed Results**:
@@ -194,29 +274,25 @@ Manage the lifecycle of the `GrowthBook` instance, including cleanup and resourc
 ### 5. **Sticky Bucketing**
 
 ```csharp
-context.StickyBucketService = new StickyBucketService();
+context.StickyBucketService = new InMemoryStickyBucketService();
 ```
 or create it when initializing
 
 ---
 
 ## Sticky Bucketing
-Implement a `StickyBucketService`:
+
+Sticky bucketing ensures users always see the same experiment variant across sessions, even when experiment parameters change.
+
+To enable sticky bucketing, set a `StickyBucketService` on your context. For simple in-memory persistence use the built-in implementation:
 
 ```csharp
-public class StickyBucketService
-{
-    public Dictionary<string, object> GetGroups(string userId) => LoadFromStorage(userId);
-}
+context.StickyBucketService = new InMemoryStickyBucketService();
 ```
 
-```csharp
-context.StickyBucketService = new StickyBucketService();
-```
+For persistent storage (e.g. Redis, database), implement `IStickyBucketService`.
 
-or pass it during initialization
-
-Sticky bucketing ensures that users see the same experiment variant, even when user session, user login status, or experiment parameters change. See the [Sticky Bucketing docs](/app/sticky-bucketing) for more information. If your organization and experiment supports sticky bucketing, you must implement an instance of the `StickyBucketService` to use Sticky Bucketing. For simple bucket persistence using the browser's LocalStorage (can be polyfilled for other environments).
+See the [Sticky Bucketing docs](https://docs.growthbook.io/app/sticky-bucketing) for more information.
 
 ---
 
@@ -268,6 +344,9 @@ public class Context
 
     /// Forces specific experiments to always assign a specific variation (used for QA).
     public IDictionary<string, int> ForcedVariations { get; set; } = new Dictionary<string, int>();
+
+    /// Forces specific feature values regardless of evaluation rules (used for QA and testing).
+    public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
 
     /// Saved groups for sticky bucketing or other purposes. Optional.
     public JObject SavedGroups { get; set; }
