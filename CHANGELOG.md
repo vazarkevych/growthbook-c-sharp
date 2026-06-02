@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SetGlobalAttributes()`, `SetGlobalForcedVariations()`, `SetGlobalForcedFeatureValues()`, `SetTrackingCallback()` — runtime setters on `GrowthBookClient`.
 - `GetFeatures()`, `GetGlobalAttributes()` — getters on `GrowthBookClient`.
 
+- `BackgroundSync` — alias for `PreferServerSentEvents` on `Context` and `GrowthBookConfigurationOptions`.
+- `RequestHeaders` — custom headers for polling requests.
+- `StreamingRequestHeaders` — custom headers for SSE connection (e.g. `Authorization`, `Last-Event-ID`).
+- `OnFeaturesRefreshed` on `Context` — fires for both manual and background SSE updates.
+- `OnStreamingEventId` — callback for persisting `Last-Event-ID` across restarts.
+- `AddGrowthBookClient` DI extension for ASP.NET Core — registers `GrowthBookClient` as singleton.
+
+### Improved
+- `FeatureRefreshWorker` now propagates errors to `OnFeaturesRefreshed` callback (fires `false` on failures).
+- SSE event listener filters specifically for `"features"` events and deduplicates via `Last-Event-ID`.
+- `SSEClient` auto-reconnects on 2xx status codes, stops on 410 Gone.
+
 ### Fixed
 - Sticky bucket assignment docs now update correctly in-memory after save.
 - Empty string fallback attribute no longer causes incorrect bucket assignment.
@@ -23,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 - `GrowthBookFactory` — use `GrowthBookClient` instead.
+- `AddGrowthBook` DI extension — use `AddGrowthBookClient` instead.
 
 ## [1.2.0]
 

@@ -45,6 +45,15 @@ namespace GrowthBook.MultiUser.Configuration
         /// <summary>Invoked after features are successfully loaded or refreshed.</summary>
         public Action<bool> OnFeaturesRefreshed { get; set; }
 
+        /// <summary>Optional custom headers for polling requests.</summary>
+        public IDictionary<string, string> RequestHeaders { get; set; }
+
+        /// <summary>Optional custom headers for SSE streaming connection (e.g. Authorization, Last-Event-ID).</summary>
+        public IDictionary<string, string> StreamingRequestHeaders { get; set; }
+
+        /// <summary>Callback providing the latest SSE Last-Event-ID for persistence across restarts.</summary>
+        public Action<string> OnStreamingEventId { get; set; }
+
         /// <summary>Invoked when a user is assigned to an experiment variation. Use to report to your analytics system.</summary>
         public Action<Experiment, ExperimentResult> TrackingCallback { get; set; }
 

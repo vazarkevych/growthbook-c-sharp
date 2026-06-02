@@ -1,5 +1,92 @@
 # GrowthBook - SDK (C#)
 
+## Real-time Updates (SSE) — Background Sync
+
+Enable a lightweight Server-Sent Events (SSE) connection to receive near real-time feature updates. Recommended when admin toggles are frequent or you need low-latency updates. Prefer polling/manual refresh if updates are infrequent or the app is battery/latency-sensitive.
+
+### Initialization
+
+```csharp
+// Example storage helpers for Last-Event-ID persistence
+static class Storage
+{
+    public static Task<string> ReadAsync(string key)
+        => Task.FromResult(System.IO.File.Exists(key) ? System.IO.File.ReadAllText(key) : null);
+    public static Task WriteAsync(string key, string value)
+    {
+        System.IO.File.WriteAllText(key, value ?? string.Empty);
+        return Task.CompletedTask;
+    }
+}
+
+// Load previously persisted Last-Event-ID (optional)
+var lastEventId = await Storage.ReadAsync("gb_last_event_id");
+
+var ctx = new GrowthBook.Context
+{
+    ApiHost = "https://cdn.growthbook.io",
+    ClientKey = "sdk-abc123",
+
+    // Enable streaming updates
+    BackgroundSync = true,
+
+    // Optional request headers for polling/manual fetches
+    RequestHeaders = new Dictionary<string, string>
+    {
+        { "Authorization", "Bearer <token>" }
+    },
+
+    // Optional headers for SSE connection (Authorization, Last-Event-ID)
+    StreamingRequestHeaders = new Dictionary<string, string>
+    {
+        { "Authorization", "Bearer <token>" },
+        { "Last-Event-ID", lastEventId ?? string.Empty } // resume after restarts
+    },
+
+    // Fires on both initial/manual refresh and streaming updates
+    OnFeaturesRefreshed = success =>
+    {
+        if (success)
+        {
+            // e.g., notify listeners / rebuild UI / invalidate caches
+        }
+        else
+        {
+            // network failure or payload issue
+        }
+    },
+
+    // Provides the latest SSE Last-Event-ID so you can persist it
+    OnStreamingEventId = async eventId =>
+    {
+        if (!string.IsNullOrEmpty(eventId))
+        {
+            await Storage.WriteAsync("gb_last_event_id", eventId);
+        }
+    }
+};
+
+using var gb = new GrowthBook.GrowthBook(ctx);
+
+// Perform initial load (subsequent updates will arrive via SSE if enabled)
+await gb.LoadFeatures();
+
+// Example usage
+var isNewCheckoutOn = await gb.IsOnAsync("new-checkout");
+```
+
+### Lifecycle and Teardown
+
+- The SDK maintains a single SSE connection in the background when `BackgroundSync = true`.
+- On network errors, it uses an exponential backoff strategy and auto-reconnects.
+- Persist and reuse `Last-Event-ID` to avoid duplicate events on resume (see `OnStreamingEventId`).
+- Dispose your `GrowthBook` instance on shutdown; the SSE connection will close automatically.
+
+```csharp
+// When your app is shutting down:
+gb.Destroy(); // or gb.Dispose();
+```
+
 ![growthbook banner with csharp logo](https://camo.githubusercontent.com/b6cc3335dcf09b9c3baf421e28ded771ae34a5efaf87b794eef364f10384d904/68747470733a2f2f646f63732e67726f777468626f6f6b2e696f2f696d616765732f6865726f2d6373686172702d73646b2e706e67)
 
 Powerful feature flagging and A/B testing for C# apps using [GrowthBook](https://www.growthbook.io/).
@@ -156,16 +243,14 @@ string theme = client.GetFeature<string>("app-theme", "light", userContext);
 Register `GrowthBookClient` as a singleton in `Program.cs`:
 
 ```csharp
-builder.Services.AddSingleton<GrowthBookClient>(sp =>
+using GrowthBook.Extensions;
+using GrowthBook.MultiUser.Configuration;
+
+builder.Services.AddGrowthBookClient(options =>
 {
-    var client = new GrowthBookClient(new Options
-    {
-        ClientKey = "sdk-abc123",
-        OnFeaturesRefreshed = success =>
-            Console.WriteLine($"Features refreshed: {success}")
-    });
-    client.InitializeAsync().GetAwaiter().GetResult();
-    return client;
+    options.ClientKey = "sdk-abc123";
+    options.OnFeaturesRefreshed = success =>
+        Console.WriteLine($"Features refreshed: {success}");
 });
 ```
 
@@ -198,6 +283,46 @@ public class HomeController : ControllerBase
 > **When to use `GrowthBookClient` vs `GrowthBook`**
 > - Use `GrowthBookClient` for server-side multiuser apps (ASP.NET Core, workers, APIs).
 > - Use `GrowthBook` for single-user or client-side scenarios where one instance maps to one user.
+
+---
+
+### Dependency Injection (ASP.NET Core)
+
+Register `GrowthBookClient` as a singleton using the provided extension:
+
+```csharp
+// Program.cs
+using GrowthBook.Extensions;
+using GrowthBook.MultiUser;
+using GrowthBook.MultiUser.Configuration;
+
+builder.Services.AddGrowthBookClient(options =>
+{
+    options.ClientKey = "YOUR_CLIENT_KEY";
+    options.OnFeaturesRefreshed = success =>
+        Console.WriteLine($"Features refreshed: {success}");
+});
+```
+
+Inject `GrowthBookClient` and pass a per-request `UserContext`:
+
+```csharp
+app.MapGet("/feature/{userId}", (GrowthBookClient gb, string userId) =>
+{
+    var userContext = new UserContext
+    {
+        Attributes = JObject.FromObject(new { id = userId, country = "US" })
+    };
+    var isOn = gb.IsOn("my-feature-key", userContext);
+    return Results.Ok(new { on = isOn });
+});
+```
+
+> **Note:** The legacy `AddGrowthBook` extension (registers `GrowthBookFactory`) is deprecated. Use `AddGrowthBookClient` instead.
+
+Notes:
+- `GrowthBookFactory` is registered as a singleton.
+- `IGrowthBook` is registered as scoped. For per-request customization, prefer using the factory.
 
 ---
 
@@ -368,6 +493,22 @@ public class Context
 
     /// Custom cache directory path for the cache manager. Uses system temp directory if not specified.
     public string CachePath { get; set; }
+
+    /// Enable background streaming updates (SSE). Alias for PreferServerSentEvents.
+    public bool BackgroundSync { get; set; }
+
+    /// Optional custom headers for feature fetch (polling) requests.
+    public IDictionary<string, string> RequestHeaders { get; set; }
+
+    /// Optional custom headers for the SSE streaming connection (e.g. Authorization, Last-Event-ID).
+    public IDictionary<string, string> StreamingRequestHeaders { get; set; }
+
+    /// Callback fired after features are applied to the cache. True on success, false on failure.
+    /// Fires for both manual refreshes and background SSE updates.
+    public Action<bool> OnFeaturesRefreshed { get; set; }
+
+    /// Callback providing the latest SSE Last-Event-ID for persistence across restarts.
+    public Action<string> OnStreamingEventId { get; set; }
 }
 ```
 

@@ -62,7 +62,18 @@ namespace GrowthBook.MultiUser
             }
             else
             {
-                _repository = CreateRepository(options,  _loggerFactory);
+                _repository = CreateRepository(options, _loggerFactory, success =>
+                {
+                    if (success)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            var features = await _repository.GetFeatures(null);
+                            if (features != null) _currentFeatures = features;
+                        });
+                    }
+                    options.OnFeaturesRefreshed?.Invoke(success);
+                });
                 _ownsRepository = true;
             }
         }
@@ -230,7 +241,7 @@ namespace GrowthBook.MultiUser
             return new EvaluationContext(global, user);
         }
 
-        private static IGrowthBookFeatureRepository CreateRepository(Options options, ILoggerFactory loggerFactory)
+        private static IGrowthBookFeatureRepository CreateRepository(Options options, ILoggerFactory loggerFactory, Action<bool> onFeaturesRefreshed)
         {
             var config = new GrowthBookConfigurationOptions
             {
@@ -238,7 +249,11 @@ namespace GrowthBook.MultiUser
                 ClientKey = options.ClientKey,
                 DecryptionKey = options.DecryptionKey,
                 CacheExpirationInSeconds = 60,
-                PreferServerSentEvents = true
+                PreferServerSentEvents = true,
+                RequestHeaders = options.RequestHeaders,
+                StreamingRequestHeaders = options.StreamingRequestHeaders,
+                OnStreamingEventId = options.OnStreamingEventId,
+                OnFeaturesRefreshed = onFeaturesRefreshed
             };
 
             var cache = options.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: 60);
