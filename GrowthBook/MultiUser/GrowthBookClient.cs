@@ -231,7 +231,9 @@ namespace GrowthBook.MultiUser
             var user = new UserContext
             {
                 Attributes = userContext?.Attributes ?? new JObject(),
+                AttributeOverrides = userContext?.AttributeOverrides,
                 ForcedVariations = userContext?.ForcedVariations,
+                ForcedFeatureValues = userContext?.ForcedFeatureValues,
                 TrackingCallback = userContext?.TrackingCallback,
                 StickyBucketService = stickyBucketService,
                 Url = userContext?.Url,

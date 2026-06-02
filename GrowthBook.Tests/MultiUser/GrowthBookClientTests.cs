@@ -130,4 +130,175 @@ public class GrowthBookClientTests
 
         result.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task EvalFeature_GlobalAttributes_MergedWithUserAttributes_UserWins()
+    {
+        var mockRepo = Substitute.For<IGrowthBookFeatureRepository>();
+        mockRepo
+            .GetFeatures(Arg.Any<GrowthBookRetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CreateFeatures()));
+
+        using var client = new GrowthBookClient(new Options
+        {
+            ClientKey = "sdk-test",
+            LoggerFactory = NullLoggerFactory.Instance,
+            FeatureRepository = mockRepo,
+            GlobalAttributes = JObject.Parse("{\"id\": \"global-user\"}")
+        });
+
+        await client.InitializeAsync();
+
+        // User attribute "id" overrides global "id"
+        var userCtx = new UserContext { Attributes = JObject.Parse("{\"id\": \"user-42\"}") };
+        var withOverride = client.EvalFeature("dark-mode", userCtx);
+
+        // No user attribute — falls back to global "id"
+        var globalCtx = new UserContext { Attributes = new JObject() };
+        var withGlobal = client.EvalFeature("dark-mode", globalCtx);
+
+        // Same user id should give same result regardless of where it came from
+        withOverride.On.Should().Be(client.EvalFeature("dark-mode",
+            new UserContext { Attributes = JObject.Parse("{\"id\": \"user-42\"}") }).On);
+
+        withGlobal.On.Should().Be(client.EvalFeature("dark-mode",
+            new UserContext { Attributes = JObject.Parse("{\"id\": \"global-user\"}") }).On);
+    }
+
+    [Fact]
+    public async Task SetGlobalForcedFeatureValues_OverridesFeatureResult()
+    {
+        using var client = CreateClient();
+        await client.InitializeAsync();
+
+        var userCtx = new UserContext { Attributes = JObject.Parse("{\"id\": \"user-1\"}") };
+
+        client.SetGlobalForcedFeatureValues(new Dictionary<string, JToken>
+        {
+            ["dark-mode"] = JToken.FromObject(true)
+        });
+
+        var result = client.EvalFeature("dark-mode", userCtx);
+
+        result.On.Should().BeTrue();
+        result.Source.Should().Be("override");
+    }
+
+    [Fact]
+    public async Task UserContext_ForcedFeatureValues_OverridesGlobalForcedValues()
+    {
+        using var client = CreateClient();
+        await client.InitializeAsync();
+
+        client.SetGlobalForcedFeatureValues(new Dictionary<string, JToken>
+        {
+            ["dark-mode"] = JToken.FromObject(false)
+        });
+
+        var userCtx = new UserContext
+        {
+            Attributes = JObject.Parse("{\"id\": \"user-1\"}"),
+            ForcedFeatureValues = new Dictionary<string, JToken>
+            {
+                ["dark-mode"] = JToken.FromObject(true)
+            }
+        };
+
+        var result = client.EvalFeature("dark-mode", userCtx);
+
+        result.On.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SetGlobalForcedVariations_ForcesVariationForAllUsers()
+    {
+        using var client = CreateClient();
+        await client.InitializeAsync();
+
+        client.SetGlobalForcedVariations(new Dictionary<string, int>
+        {
+            ["dark-mode"] = 1
+        });
+
+        var result = client.EvalFeature("dark-mode",
+            new UserContext { Attributes = JObject.Parse("{\"id\": \"any-user\"}") });
+
+        result.On.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_FiresOnFeaturesRefreshedCallback()
+    {
+        var mockRepo = Substitute.For<IGrowthBookFeatureRepository>();
+        mockRepo
+            .GetFeatures(Arg.Any<GrowthBookRetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CreateFeatures()));
+
+        bool? callbackResult = null;
+
+        using var client = new GrowthBookClient(new Options
+        {
+            ClientKey = "sdk-test",
+            LoggerFactory = NullLoggerFactory.Instance,
+            FeatureRepository = mockRepo,
+            OnFeaturesRefreshed = success => callbackResult = success
+        });
+
+        await client.InitializeAsync();
+
+        callbackResult.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RefreshFeaturesAsync_FiresOnFeaturesRefreshedCallback()
+    {
+        var mockRepo = Substitute.For<IGrowthBookFeatureRepository>();
+        mockRepo
+            .GetFeatures(Arg.Any<GrowthBookRetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CreateFeatures()));
+
+        bool? callbackResult = null;
+
+        using var client = new GrowthBookClient(new Options
+        {
+            ClientKey = "sdk-test",
+            LoggerFactory = NullLoggerFactory.Instance,
+            FeatureRepository = mockRepo,
+            OnFeaturesRefreshed = success => callbackResult = success
+        });
+
+        await client.InitializeAsync();
+        callbackResult = null;
+
+        await client.RefreshFeaturesAsync();
+
+        callbackResult.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetFeatures_ReturnsLoadedFeatures()
+    {
+        using var client = CreateClient();
+        await client.InitializeAsync();
+
+        var features = client.GetFeatures();
+
+        features.Should().ContainKey("dark-mode");
+    }
+
+    [Fact]
+    public async Task SetTrackingCallback_IsInvokedOnExperimentEval()
+    {
+        using var client = CreateClient();
+        await client.InitializeAsync();
+
+        Experiment trackedExperiment = null;
+        client.SetTrackingCallback((exp, result) => trackedExperiment = exp);
+
+        client.EvalFeature("dark-mode",
+            new UserContext { Attributes = JObject.Parse("{\"id\": \"user-1\"}") });
+
+        trackedExperiment.Should().NotBeNull();
+        trackedExperiment.Key.Should().Be("dark-mode");
+    }
 }
