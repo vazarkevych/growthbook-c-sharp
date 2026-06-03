@@ -88,7 +88,13 @@ namespace GrowthBook.MultiUser
             if (features != null)
             {
                 _currentFeatures = features;
-                _options.OnFeaturesRefreshed?.Invoke(true);
+                // With a custom repository the internal callback is not registered,
+                // so fire OnFeaturesRefreshed explicitly. With the default repository
+                // the internal callback already fires it.
+                if (!_ownsRepository)
+                {
+                    _options.OnFeaturesRefreshed?.Invoke(true);
+                }
             }
         }
 
@@ -104,7 +110,10 @@ namespace GrowthBook.MultiUser
             if (features != null)
             {
                 _currentFeatures = features;
-                _options.OnFeaturesRefreshed?.Invoke(true);
+                if (!_ownsRepository)
+                {
+                    _options.OnFeaturesRefreshed?.Invoke(true);
+                }
             }
         }
 
