@@ -45,6 +45,26 @@ namespace GrowthBook.MultiUser.Configuration
         /// <summary>Invoked after features are successfully loaded or refreshed.</summary>
         public Action<bool> OnFeaturesRefreshed { get; set; }
 
+        /// <summary>
+        /// Enable background streaming updates via SSE. When true, the client keeps a persistent
+        /// connection to the GrowthBook streaming endpoint and automatically refreshes features
+        /// without an explicit <see cref="GrowthBookClient.RefreshFeaturesAsync"/> call.
+        /// Defaults to false (opt-in), consistent with the single-user <see cref="Context.BackgroundSync"/>.
+        /// </summary>
+        public bool BackgroundSync { get; set; } = false;
+
+        /// <summary>
+        /// How long in seconds before the feature cache is considered expired and a refresh is triggered.
+        /// Defaults to 60.
+        /// </summary>
+        public int CacheExpirationInSeconds { get; set; } = 60;
+
+        /// <summary>
+        /// Timeout in seconds for HTTP requests to the GrowthBook API (both polling and SSE).
+        /// Defaults to 60.
+        /// </summary>
+        public int HttpRequestTimeoutInSeconds { get; set; } = 60;
+
         /// <summary>Optional custom headers for polling requests.</summary>
         public IDictionary<string, string> RequestHeaders { get; set; }
 

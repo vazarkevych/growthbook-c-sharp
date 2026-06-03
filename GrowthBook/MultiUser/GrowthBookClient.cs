@@ -250,16 +250,16 @@ namespace GrowthBook.MultiUser
                 ApiHost = options.ApiHost,
                 ClientKey = options.ClientKey,
                 DecryptionKey = options.DecryptionKey,
-                CacheExpirationInSeconds = 60,
-                PreferServerSentEvents = true,
+                CacheExpirationInSeconds = options.CacheExpirationInSeconds,
+                PreferServerSentEvents = options.BackgroundSync,
                 RequestHeaders = options.RequestHeaders,
                 StreamingRequestHeaders = options.StreamingRequestHeaders,
                 OnStreamingEventId = options.OnStreamingEventId,
                 OnFeaturesRefreshed = onFeaturesRefreshed
             };
 
-            var cache = options.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: 60);
-            var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: 60);
+            var cache = options.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: options.CacheExpirationInSeconds);
+            var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: options.HttpRequestTimeoutInSeconds);
             var workLogger = loggerFactory.CreateLogger<FeatureRefreshWorker>();
             var repoLogger = loggerFactory.CreateLogger<FeatureRepository>();
             var worker = new FeatureRefreshWorker(workLogger, httpClientFactory, config, cache);

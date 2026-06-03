@@ -75,6 +75,10 @@ await gb.LoadFeatures();
 var isNewCheckoutOn = await gb.IsOnAsync("new-checkout");
 ```
 
+### GrowthBookClient (multiuser)
+
+`GrowthBookClient` supports the same SSE mechanism via `Options.BackgroundSync`. See the [GrowthBookClient section](#growthbookclient-multiuser-mode) for a full example.
+
 ### Lifecycle and Teardown
 
 - The SDK maintains a single SSE connection in the background when `BackgroundSync = true`.
@@ -223,6 +227,18 @@ using Newtonsoft.Json.Linq;
 var client = new GrowthBookClient(new Options
 {
     ClientKey = "sdk-abc123",
+
+    // Enable background SSE streaming (opt-in, default false)
+    BackgroundSync = true,
+
+    // Optional: override cache and HTTP timeout defaults (both default to 60s)
+    CacheExpirationInSeconds  = 30,
+    HttpRequestTimeoutInSeconds = 10,
+
+    // Fires after each successful or failed feature refresh (initial load and SSE updates)
+    OnFeaturesRefreshed = success =>
+        Console.WriteLine($"Features refreshed: {success}"),
+
     TrackingCallback = (experiment, result) =>
         Console.WriteLine($"[tracking] {experiment.Key} → variant {result.VariationId}")
 });
@@ -494,8 +510,14 @@ public class Context
     /// Custom cache directory path for the cache manager. Uses system temp directory if not specified.
     public string CachePath { get; set; }
 
-    /// Enable background streaming updates (SSE). Alias for PreferServerSentEvents.
-    public bool BackgroundSync { get; set; }
+    /// Enable background streaming updates (SSE). Defaults to false (opt-in).
+    public bool BackgroundSync { get; set; } = false;
+
+    /// How long in seconds before the feature cache is considered expired. Defaults to 60.
+    public int CacheExpirationInSeconds { get; set; } = 60;
+
+    /// Timeout in seconds for HTTP requests to the GrowthBook API (polling and SSE). Defaults to 60.
+    public int HttpRequestTimeoutInSeconds { get; set; } = 60;
 
     /// Optional custom headers for feature fetch (polling) requests.
     public IDictionary<string, string> RequestHeaders { get; set; }
@@ -801,6 +823,57 @@ Represents the track data associated with a feature rule. This class is used to 
         //The tracked experiment result.
         public ExperimentResult Result { get; set; }
     }
+```
+
+---
+
+## Remote Evaluation
+
+By default the SDK fetches all feature definitions and evaluates them locally. With Remote Evaluation the SDK sends user attributes to the GrowthBook server instead, and the server returns only the evaluated results — keeping your targeting rules and business logic private.
+
+> **When to use:** client-side scenarios (mobile, desktop, browser) where you don't want targeting rules visible to end users. For server-side code (ASP.NET Core, workers) local evaluation is preferred since rules are never exposed to clients anyway.
+
+**Limitations:**
+- Not available with `GrowthBookClient` — only the single-user `GrowthBook` class
+- Cannot be combined with `DecryptionKey`
+- Requires `ClientKey` and `ApiHost`
+
+### Usage
+
+```csharp
+var ctx = new Context
+{
+    ClientKey = "sdk-abc123",
+    ApiHost   = "https://cdn.growthbook.io",
+
+    RemoteEval = true,
+
+    Attributes = JObject.Parse("""{"id":"user-1","country":"US"}"""),
+
+    // Optional: only re-evaluate when these specific attributes change.
+    // Without this, any attribute change triggers a new request.
+    CacheKeyAttributes = new[] { "id", "country" }
+};
+
+var gb = new GrowthBook.GrowthBook(ctx);
+
+// Sends POST /api/eval/{clientKey} with user attributes,
+// receives pre-evaluated features back from the server.
+await gb.LoadFeatures();
+
+bool isOn = gb.IsOn("dark-mode");
+```
+
+### Automatic re-evaluation
+
+When `RemoteEval = true`, calling `UpdateAttributes` or `MergeAttributes` automatically triggers a new remote evaluation request if the relevant attributes changed:
+
+```csharp
+// Triggers a new POST /api/eval request because "country" is in CacheKeyAttributes
+gb.UpdateAttributes(new { id = "user-1", country = "DE" });
+
+// Does NOT trigger a new request — "age" is not in CacheKeyAttributes
+gb.MergeAttributes(new { age = 30 });
 ```
 
 ---

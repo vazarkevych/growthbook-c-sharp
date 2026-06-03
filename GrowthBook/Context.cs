@@ -147,6 +147,18 @@ namespace GrowthBook
         public string CachePath { get; set; }
 
         /// <summary>
+        /// How long in seconds before the feature cache is considered expired and a refresh is triggered.
+        /// Defaults to 60.
+        /// </summary>
+        public int CacheExpirationInSeconds { get; set; } = 60;
+
+        /// <summary>
+        /// Timeout in seconds for HTTP requests to the GrowthBook API (both polling and SSE).
+        /// Defaults to 60.
+        /// </summary>
+        public int HttpRequestTimeoutInSeconds { get; set; } = 60;
+
+        /// <summary>
         /// Enable remote evaluation of features. When true, the SDK will send user attributes
         /// to the server for evaluation instead of evaluating features locally.
         /// Cannot be used with encryption or GrowthBook Cloud.
@@ -237,6 +249,8 @@ namespace GrowthBook
                 FeatureCache = this.FeatureCache,
                 LoggerFactory = this.LoggerFactory,
                 CachePath = this.CachePath,
+                CacheExpirationInSeconds = this.CacheExpirationInSeconds,
+                HttpRequestTimeoutInSeconds = this.HttpRequestTimeoutInSeconds,
                 RemoteEval = this.RemoteEval,
                 CacheKeyAttributes = this.CacheKeyAttributes?.ToArray(),
                 ForcedFeatures = this.ForcedFeatures,

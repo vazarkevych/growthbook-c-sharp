@@ -88,7 +88,7 @@ namespace GrowthBook
             var config = new GrowthBookConfigurationOptions
             {
                 ApiHost = context.ApiHost ?? "https://cdn.growthbook.io",
-                CacheExpirationInSeconds = 60,
+                CacheExpirationInSeconds = context.CacheExpirationInSeconds,
                 ClientKey = context.ClientKey,
                 DecryptionKey = context.DecryptionKey,
                 PreferServerSentEvents = context.BackgroundSync
@@ -145,8 +145,8 @@ namespace GrowthBook
             }
             else
             {
-                var featureCache = context.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: 60);
-                var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: 60);
+                var featureCache = context.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: context.CacheExpirationInSeconds);
+                var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: context.HttpRequestTimeoutInSeconds);
                 _ownsFeatureRepository = true;
 
                 var featureRefreshLogger = _loggerFactory.CreateLogger<FeatureRefreshWorker>();
