@@ -299,6 +299,14 @@ public class HomeController : ControllerBase
 > **When to use `GrowthBookClient` vs `GrowthBook`**
 > - Use `GrowthBookClient` for server-side multiuser apps (ASP.NET Core, workers, APIs).
 > - Use `GrowthBook` for single-user or client-side scenarios where one instance maps to one user.
+>
+> **Why not register `GrowthBook` as a singleton in DI?**
+> It may seem convenient to register the single-user `GrowthBook` class as a singleton,
+> but it is **not thread-safe** for concurrent requests. When multiple requests share one
+> instance and update `Attributes` simultaneously, users receive each other's data — a race
+> condition confirmed to occur in ~99% of parallel requests in practice.
+> `GrowthBookClient` was built specifically to solve this: it keeps features in shared state
+> and accepts a per-request `UserContext`, making it safe to use as a singleton.
 
 ---
 
