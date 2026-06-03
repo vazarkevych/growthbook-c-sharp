@@ -38,6 +38,7 @@ namespace GrowthBook
         private readonly IGrowthBookFeatureRepository _featureRepository;
         private readonly IStickyBucketService _stickyBucketService;
         private readonly IDictionary<string, StickyAssignmentsDocument> _stickyBucketAssignmentDocs;
+        private readonly object _stickyBucketLock = new object();
         private readonly ILogger<GrowthBook> _logger;
         private readonly JObject _savedGroups;
         private readonly ILoggerFactory _loggerFactory;
@@ -598,9 +599,12 @@ namespace GrowthBook
             var formattedKeys = ExperimentUtilities.DeriveIdentifierAttributes(Features, Experiments, Attributes);
             var docs = _stickyBucketService.GetAllAssignments(formattedKeys);
 
-            foreach (var kvp in docs)
+            lock (_stickyBucketLock)
             {
-                _stickyBucketAssignmentDocs[kvp.Key] = kvp.Value;
+                foreach (var kvp in docs)
+                {
+                    _stickyBucketAssignmentDocs[kvp.Key] = kvp.Value;
+                }
             }
         }
 
@@ -824,10 +828,16 @@ namespace GrowthBook
                 ForcedFeatureValues = ForcedFeatureValues
             };
 
+            IDictionary<string, StickyAssignmentsDocument> stickyBucketSnapshot;
+            lock (_stickyBucketLock)
+            {
+                stickyBucketSnapshot = new Dictionary<string, StickyAssignmentsDocument>(_stickyBucketAssignmentDocs);
+            }
+
             var user = new UserContext
             {
                 Attributes = Attributes,
-                StickyBucketAssignmentDocs = _stickyBucketAssignmentDocs,
+                StickyBucketAssignmentDocs = stickyBucketSnapshot,
                 ForcedVariations = null,
                 Url = Url,
                 ForcedFeatureValues = ForcedFeatureValues
