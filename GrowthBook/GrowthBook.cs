@@ -374,6 +374,16 @@ namespace GrowthBook
             return new Subscription(() => _asyncSubscribers.Remove(callback));
         }
 
+        /// <inheritdoc />
+        public void SetFeatureUsageCallback(Action<string, FeatureResult> callback)
+        {
+            _onFeatureUsage = callback;
+
+            _featureUsageTracked.Clear();
+
+            _logger?.LogDebug("Feature usage callback was {Action}", callback == null ? "cleared" : "replaced");
+        }
+
         private class Subscription : IDisposable
         {
             private readonly Action _unsubscribe;
