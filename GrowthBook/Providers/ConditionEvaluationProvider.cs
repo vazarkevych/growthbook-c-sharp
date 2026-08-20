@@ -323,21 +323,11 @@ namespace GrowthBook.Providers
             }
             if (op == "$inGroup")
             {
-                if (attributeValue != null && conditionValue != null)
-                {
-                    var array = savedGroups[conditionValue.ToString()]?.AsArray() ?? new JArray();
-
-                    return IsIn(array, attributeValue);
-                }
+                return IsIn(GetSavedGroup(savedGroups, conditionValue), attributeValue);
             }
             if (op == "$notInGroup")
             {
-                if (attributeValue != null && conditionValue != null)
-                {
-                    var array = savedGroups[conditionValue.ToString()]?.AsArray() ?? new JArray();
-
-                    return !IsIn(array, attributeValue);
-                }
+                return !IsIn(GetSavedGroup(savedGroups, conditionValue), attributeValue);
             }
 
             _logger.LogWarning("Unable to handle unsupported operator condition \'{Op}\', failing the condition", op);
@@ -408,6 +398,16 @@ namespace GrowthBook.Providers
             {
                 return false;
             }
+        }
+
+        private static JArray GetSavedGroup(JObject savedGroups, JToken groupId)
+        {
+            if (savedGroups is null || groupId is null)
+            {
+                return new JArray();
+            }
+
+            return savedGroups[groupId.ToString()]?.AsArray() ?? new JArray();
         }
 
         private bool IsIn(JToken conditionValue, JToken actualValue, StringComparison? stringComparison = null)
