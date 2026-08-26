@@ -102,6 +102,8 @@ namespace GrowthBook
 
             _conditionEvaluator = new ConditionEvaluationProvider(conditionEvaluatorLogger);
 
+            ApplyEncryptedFeatures(context);
+
             if (context.FeatureRepository != null)
             {
                 _featureRepository = context.FeatureRepository;
@@ -125,6 +127,35 @@ namespace GrowthBook
 
                 _featureRepository = new FeatureRepository(featureRepositoryLogger, featureCache, featureRefreshWorker, remoteEvaluationService);
             }
+        }
+
+        private void ApplyEncryptedFeatures(Context context)
+        {
+            if (string.IsNullOrWhiteSpace(context.EncryptedFeatures))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(context.DecryptionKey))
+            {
+                throw new ArgumentException($"{nameof(Context.EncryptedFeatures)} was supplied without a {nameof(Context.DecryptionKey)} to decrypt it with", nameof(context));
+            }
+
+            _logger.LogInformation("Context contained encrypted features, decrypting them now");
+
+            var decryptedFeaturesJson = context.EncryptedFeatures.DecryptWith(context.DecryptionKey);
+
+            try
+            {
+                Features = JObject.Parse(decryptedFeaturesJson).ToObject<Dictionary<string, Feature>>()
+                    ?? new Dictionary<string, Feature>();
+            }
+            catch (Exception ex)
+            {
+                throw new DecryptionException("The decrypted value was not a valid feature payload", ex);
+            }
+
+            _logger.LogInformation("Decrypted '{FeatureCount}' feature(s) from the context", Features.Count);
         }
 
         /// <summary>

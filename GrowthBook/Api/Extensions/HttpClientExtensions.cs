@@ -149,11 +149,11 @@ namespace GrowthBook.Api.Extensions
             }
 
             logger.LogInformation("API response JSON contained encrypted features, decrypting them now");
-            logger.LogDebug($"Attempting to decrypt features with the provided decryption key '{config.DecryptionKey}'");
+            logger.LogDebug("Attempting to decrypt features with the configured decryption key");
 
             var decryptedFeaturesJson = featuresResponse.EncryptedFeatures.DecryptWith(config.DecryptionKey);
 
-            logger.LogDebug($"Completed attempt to decrypt features which resulted in plaintext value of '{decryptedFeaturesJson}'");
+            logger.LogDebug("Completed attempt to decrypt features, producing '{DecryptedLength}' characters of feature JSON", decryptedFeaturesJson?.Length ?? 0);
 
             var jsonObject = JObject.Parse(decryptedFeaturesJson);
 
