@@ -108,6 +108,54 @@ namespace GrowthBook.Tests.Api
             user1.Should().NotBeSameAs(user2);
         }
 
+        [Fact]
+        public void GrowthBookFactory_SharedConfiguration_ShouldNotEnableServerSentEvents_ByDefault()
+        {
+            // BackgroundSync is opt-in (Context.BackgroundSync defaults to false) and FeatureRefreshWorker
+            // opens the SSE connection off PreferServerSentEvents, so forcing it on here would give every
+            // factory user a streaming connection they never asked for.
+            var config = GrowthBookFactory.CreateSharedConfiguration(new Context { ClientKey = "test-key" });
+
+            config.PreferServerSentEvents.Should().BeFalse();
+        }
+
+        [Fact]
+        public void GrowthBookFactory_SharedConfiguration_ShouldEnableServerSentEvents_WhenBackgroundSyncIsRequested()
+        {
+            var context = new Context { ClientKey = "test-key", BackgroundSync = true };
+
+            var config = GrowthBookFactory.CreateSharedConfiguration(context);
+
+            config.PreferServerSentEvents.Should().BeTrue("because opting in has to still work");
+        }
+
+        [Fact]
+        public void GrowthBookFactory_SharedConfiguration_ShouldCarryTheContextSettings()
+        {
+            var context = new Context
+            {
+                ApiHost = "https://cdn.example.test",
+                ClientKey = "test-key",
+                DecryptionKey = "test-decryption-key",
+                CacheExpirationInSeconds = 15
+            };
+
+            var config = GrowthBookFactory.CreateSharedConfiguration(context);
+
+            config.ApiHost.Should().Be("https://cdn.example.test");
+            config.ClientKey.Should().Be("test-key");
+            config.DecryptionKey.Should().Be("test-decryption-key");
+            config.CacheExpirationInSeconds.Should().Be(15);
+        }
+
+        [Fact]
+        public void GrowthBookFactory_SharedConfiguration_ShouldFallBackToTheDefaultApiHost()
+        {
+            var config = GrowthBookFactory.CreateSharedConfiguration(new Context { ClientKey = "test-key" });
+
+            config.ApiHost.Should().Be("https://cdn.growthbook.io");
+        }
+
         public void Dispose()
         {
             // Cleanup if needed

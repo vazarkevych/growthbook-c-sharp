@@ -123,17 +123,10 @@ namespace GrowthBook
         {
             var loggerFactory = context.LoggerFactory ?? LoggerFactory.Create(_ => { });
 
-            var config = new GrowthBookConfigurationOptions
-            {
-                ApiHost = context.ApiHost ?? "https://cdn.growthbook.io",
-                CacheExpirationInSeconds = 60,
-                ClientKey = context.ClientKey,
-                DecryptionKey = context.DecryptionKey,
-                PreferServerSentEvents = true
-            };
+            var config = CreateSharedConfiguration(context);
 
-            var cache = context.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: 60);
-            var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: 60);
+            var cache = context.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: context.CacheExpirationInSeconds);
+            var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: context.HttpRequestTimeoutInSeconds);
             var refreshWorker = new FeatureRefreshWorker(
                 loggerFactory.CreateLogger<FeatureRefreshWorker>(),
                 httpClientFactory,
@@ -145,5 +138,21 @@ namespace GrowthBook
                 cache,
                 refreshWorker);
         }
+
+        /// <summary>
+        /// Builds the configuration used by the internally created shared repository. Split out from
+        /// <see cref="CreateSharedRepository"/> so it can be asserted on directly - the values otherwise
+        /// disappear into a private field of <see cref="FeatureRefreshWorker"/>, which is how
+        /// <see cref="Context.BackgroundSync"/> came to be hardcoded to true here in the first place.
+        /// </summary>
+        internal static GrowthBookConfigurationOptions CreateSharedConfiguration(Context context) =>
+            new GrowthBookConfigurationOptions
+            {
+                ApiHost = context.ApiHost ?? "https://cdn.growthbook.io",
+                CacheExpirationInSeconds = context.CacheExpirationInSeconds,
+                ClientKey = context.ClientKey,
+                DecryptionKey = context.DecryptionKey,
+                PreferServerSentEvents = context.BackgroundSync
+            };
     }
 }
