@@ -1,0 +1,222 @@
+using System;
+using System.Collections.Generic;
+using FluentAssertions;
+using Newtonsoft.Json.Linq;
+using Xunit;
+
+namespace GrowthBook.Tests.CustomTests;
+
+/// <summary>
+/// Covers the teardown lifecycle surface. An instance could be disposed but there was no way to hook
+/// into that or to ask whether it had happened, so wiring the SDK into a framework lifecycle - a DI
+/// container releasing resources, a test asserting clean teardown - had nothing to attach to.
+/// </summary>
+public class LifecycleCallbackTests : UnitTest
+{
+    private static GrowthBook NewInstance() => new GrowthBook(new Context
+    {
+        Attributes = JObject.FromObject(new { id = "user-1" }),
+        Features = new Dictionary<string, Feature> { ["flag"] = new Feature { DefaultValue = true } }
+    });
+
+    [Fact]
+    public void IsDestroyedIsFalseUntilTeardown()
+    {
+        var growthBook = NewInstance();
+
+        growthBook.IsDestroyed.Should().BeFalse();
+
+        growthBook.Destroy();
+
+        growthBook.IsDestroyed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DisposeFlipsTheFlagJustAsDestroyDoes()
+    {
+        var growthBook = NewInstance();
+
+        growthBook.Dispose();
+
+        growthBook.IsDestroyed.Should().BeTrue("Destroy is only an alias - both routes are the same teardown");
+    }
+
+    [Fact]
+    public void ARegisteredCallbackRunsOnTeardown()
+    {
+        var growthBook = NewInstance();
+        var calls = 0;
+
+        growthBook.OnDestroy(() => calls++);
+
+        calls.Should().Be(0, "registration alone must not run it");
+
+        growthBook.Destroy();
+
+        calls.Should().Be(1);
+    }
+
+    [Fact]
+    public void EveryRegisteredCallbackRunsOnceAndInOrder()
+    {
+        var growthBook = NewInstance();
+        var order = new List<string>();
+
+        growthBook.OnDestroy(() => order.Add("first"));
+        growthBook.OnDestroy(() => order.Add("second"));
+        growthBook.OnDestroy(() => order.Add("third"));
+
+        growthBook.Destroy();
+
+        order.Should().Equal("first", "second", "third");
+    }
+
+    [Fact]
+    public void ARepeatTeardownDoesNotFireThemAgain()
+    {
+        var growthBook = NewInstance();
+        var calls = 0;
+
+        growthBook.OnDestroy(() => calls++);
+
+        growthBook.Destroy();
+        growthBook.Destroy();
+        growthBook.Dispose();
+
+        calls.Should().Be(1, "exactly once");
+    }
+
+    /// <summary>
+    /// The registered callbacks, read by reflection. A behavioural assertion cannot see whether they
+    /// were released, because the guard in Dispose already stops a repeat teardown from reaching them.
+    /// </summary>
+    private static int RegisteredCallbackCount(GrowthBook growthBook)
+    {
+        var field = typeof(GrowthBook).GetField("_destroyCallbacks",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        field.Should().NotBeNull("the test needs to see the registry to assert it was released");
+
+        return ((List<Action>)field.GetValue(growthBook)).Count;
+    }
+
+    [Fact]
+    public void TeardownReleasesTheCallbacksItRan()
+    {
+        var growthBook = NewInstance();
+        var captured = new byte[1024];
+
+        growthBook.OnDestroy(() => GC.KeepAlive(captured));
+        growthBook.OnDestroy(() => GC.KeepAlive(captured));
+
+        RegisteredCallbackCount(growthBook).Should().Be(2);
+
+        growthBook.Destroy();
+
+        RegisteredCallbackCount(growthBook).Should().Be(0,
+            "a callback closes over whatever the consumer captured, so a destroyed instance must not keep holding it");
+    }
+
+    [Fact]
+    public void AThrowingCallbackDoesNotStopTheOthersOrTheTeardown()
+    {
+        var growthBook = NewInstance();
+        var ran = new List<string>();
+
+        growthBook.OnDestroy(() => ran.Add("before"));
+        growthBook.OnDestroy(() => throw new InvalidOperationException("the consumer's callback is broken"));
+        growthBook.OnDestroy(() => ran.Add("after"));
+
+        Action teardown = () => growthBook.Destroy();
+
+        teardown.Should().NotThrow();
+        ran.Should().Equal(new[] { "before", "after" }, "a throwing callback is absorbed, the rest still run");
+        growthBook.IsDestroyed.Should().BeTrue("and teardown still completed");
+        growthBook.Features.Should().BeEmpty("including the part that releases state");
+    }
+
+    [Fact]
+    public void ACallbackSeesTheInstanceAlreadyMarkedDestroyed()
+    {
+        var growthBook = NewInstance();
+        var seen = false;
+
+        growthBook.OnDestroy(() => seen = growthBook.IsDestroyed);
+
+        growthBook.Destroy();
+
+        seen.Should().BeTrue("a callback asking about the teardown it was called for must not be told it has not happened");
+    }
+
+    [Fact]
+    public void ACallbackStillSeesTheStateItMayNeed()
+    {
+        var growthBook = NewInstance();
+
+        growthBook.EvalFeature("flag");
+
+        var featuresAtTeardown = -1;
+        var resultsAtTeardown = -1;
+
+        growthBook.OnDestroy(() =>
+        {
+            featuresAtTeardown = growthBook.Features.Count;
+            resultsAtTeardown = growthBook.GetAllResults().Count;
+        });
+
+        growthBook.Destroy();
+
+        featuresAtTeardown.Should().Be(1,
+            "callbacks run before the state is released, so one that needs the features can still read them");
+        resultsAtTeardown.Should().Be(0, "this feature has no experiment rule, so nothing was assigned");
+        growthBook.Features.Should().BeEmpty("and the release still happened afterwards");
+    }
+
+    [Fact]
+    public void RegisteringNullIsIgnored()
+    {
+        var growthBook = NewInstance();
+
+        Action register = () => growthBook.OnDestroy(null);
+
+        register.Should().NotThrow();
+
+        Action teardown = () => growthBook.Destroy();
+
+        teardown.Should().NotThrow("a null registration must not become a null reference during teardown");
+    }
+
+    [Fact]
+    public void RegisteringAfterTeardownRunsTheCallbackImmediately()
+    {
+        var growthBook = NewInstance();
+
+        growthBook.Destroy();
+
+        var calls = 0;
+
+        growthBook.OnDestroy(() => calls++);
+
+        calls.Should().Be(1, "a callback registered against a destroyed instance would otherwise never run at all");
+
+        growthBook.Destroy();
+
+        calls.Should().Be(1, "and it must not be queued for a later teardown as well");
+    }
+
+    [Fact]
+    public void TheSurfaceIsReachableThroughTheInterface()
+    {
+        IGrowthBook growthBook = NewInstance();
+        var calls = 0;
+
+        growthBook.IsDestroyed.Should().BeFalse();
+        growthBook.OnDestroy(() => calls++);
+
+        // Destroy is not on IGrowthBook on this branch, only Dispose - they are the same teardown.
+        growthBook.Dispose();
+
+        growthBook.IsDestroyed.Should().BeTrue("a DI-injected consumer only sees IGrowthBook");
+        calls.Should().Be(1);
+    }
+}

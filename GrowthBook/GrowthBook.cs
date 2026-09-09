@@ -27,6 +27,8 @@ namespace GrowthBook
     {
         private readonly bool _qaMode;
         private readonly Dictionary<string, ExperimentAssignment> _assigned;
+        private readonly object _destroyCallbackLock = new object();
+        private List<Action> _destroyCallbacks = new List<Action>();
         private readonly ConcurrentDictionary<string, byte> _tracked;
         private Action<Experiment, ExperimentResult> _trackingCallback;
         private bool _disposedValue;
@@ -165,8 +167,13 @@ namespace GrowthBook
         {
             if (!_disposedValue)
             {
+                // Set before the callbacks run and before the state is cleared.
+                _disposedValue = true;
+
                 if (disposing)
                 {
+                    FireDestroyCallbacks();
+
                     Attributes = null;
                     Features.Clear();
                     ForcedVariations = null;
@@ -182,7 +189,6 @@ namespace GrowthBook
                         disposableFactory.Dispose();
                     }
                 }
-                _disposedValue = true;
             }
         }
 
@@ -201,6 +207,66 @@ namespace GrowthBook
         public void Destroy()
         {
             Dispose();
+        }
+
+        /// <inheritdoc />
+        public bool IsDestroyed => _disposedValue;
+
+        /// <inheritdoc />
+        public void OnDestroy(Action callback)
+        {
+            if (callback is null)
+            {
+                return;
+            }
+
+            lock (_destroyCallbackLock)
+            {
+                if (!_disposedValue)
+                {
+                    _destroyCallbacks.Add(callback);
+                    return;
+                }
+            }
+
+            // A callback queued against a destroyed instance would never run.
+            _logger?.LogDebug("A destroy callback was registered after teardown, running it immediately");
+
+            InvokeDestroyCallback(callback);
+        }
+
+        /// <summary>
+        /// Runs the registered destroy callbacks and releases them.
+        /// </summary>
+        private void FireDestroyCallbacks()
+        {
+            List<Action> callbacks;
+
+            lock (_destroyCallbackLock)
+            {
+                callbacks = _destroyCallbacks;
+                _destroyCallbacks = new List<Action>();
+            }
+
+            foreach (var callback in callbacks)
+            {
+                InvokeDestroyCallback(callback);
+            }
+        }
+
+        /// <summary>
+        /// Calls a destroy callback, absorbing anything it throws.
+        /// </summary>
+        private void InvokeDestroyCallback(Action callback)
+        {
+            try
+            {
+                callback();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Encountered unhandled exception in a destroy callback");
+            }
         }
 
         /// <summary>
