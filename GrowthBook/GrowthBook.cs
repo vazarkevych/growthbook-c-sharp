@@ -46,6 +46,7 @@ namespace GrowthBook
         private readonly Context _context;
         private JObject _previousAttributes;
         private IDictionary<string, int> _previousForcedVariations;
+
         /// <summary>
         /// Forces specific feature values regardless of evaluation rules. Overrides defaultValue, force rules, and experiments.
         /// </summary>
@@ -103,6 +104,7 @@ namespace GrowthBook
                     config.RequestHeaders[kv.Key] = kv.Value;
                 }
             }
+
             if (context.StreamingRequestHeaders != null && context.StreamingRequestHeaders.Count > 0)
             {
                 foreach (var kv in context.StreamingRequestHeaders)
@@ -110,6 +112,7 @@ namespace GrowthBook
                     config.StreamingRequestHeaders[kv.Key] = kv.Value;
                 }
             }
+
             config.OnFeaturesRefreshed = context.OnFeaturesRefreshed;
             config.OnStreamingEventId = context.OnStreamingEventId;
 
@@ -146,8 +149,10 @@ namespace GrowthBook
             }
             else
             {
-                var featureCache = context.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: context.CacheExpirationInSeconds);
-                var httpClientFactory = new HttpClientFactory(requestTimeoutInSeconds: context.HttpRequestTimeoutInSeconds);
+                var featureCache = context.FeatureCache ??
+                                   new InMemoryFeatureCache(cacheExpirationInSeconds: context.CacheExpirationInSeconds);
+                var httpClientFactory =
+                    new HttpClientFactory(requestTimeoutInSeconds: context.HttpRequestTimeoutInSeconds);
                 _ownsFeatureRepository = true;
 
                 var featureRefreshLogger = _loggerFactory.CreateLogger<FeatureRefreshWorker>();
@@ -167,6 +172,7 @@ namespace GrowthBook
                     remoteEvaluationService);
                 _ownsFeatureRepository = true;
             }
+
             ForcedFeatureValues = context.ForcedFeatureValues;
 
             RefreshStickyBuckets();
@@ -607,11 +613,11 @@ namespace GrowthBook
 
         private void TryAssignExperimentResult(Experiment experiment, ExperimentResult result)
         {
+            var assignment = new ExperimentAssignment { Experiment = experiment, Result = result };
+            bool shouldFireCallbacks = false;
+
             lock (_assignedLock)
             {
-                var assignment = new ExperimentAssignment { Experiment = experiment, Result = result };
-                bool shouldFireCallbacks = false;
-
                 // Always record the assignment locally for GetAllResults()
                 if (!_assigned.TryGetValue(experiment.Key, out ExperimentAssignment prev)
                     || prev.Result.InExperiment != result.InExperiment
@@ -620,21 +626,21 @@ namespace GrowthBook
                     _assigned[experiment.Key] = assignment;
                     shouldFireCallbacks = true;
                 }
+            }
 
-                // Also use repository tracking if available (for preventing duplicate callbacks across instances)
-                if (_featureRepository != null)
+            // Also use repository tracking if available (for preventing duplicate callbacks across instances)
+            if (_featureRepository != null)
+            {
+                if (!_featureRepository.HasIdenticalAssignment(experiment.Key, assignment))
                 {
-                    if (!_featureRepository.HasIdenticalAssignment(experiment.Key, assignment))
-                    {
-                        _featureRepository.RecordAssignment(experiment.Key, assignment);
-                    }
+                    _featureRepository.RecordAssignment(experiment.Key, assignment);
                 }
+            }
 
-                // Fire subscription callbacks if needed
-                if (shouldFireCallbacks)
-                {
-                    NotifySubscribers(experiment, result);
-                }
+            // Fire subscription callbacks if needed
+            if (shouldFireCallbacks)
+            {
+                NotifySubscribers(experiment, result);
             }
         }
 
