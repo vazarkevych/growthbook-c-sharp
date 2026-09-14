@@ -165,29 +165,49 @@ namespace GrowthBook
         /// <param name="disposing">If true, dispose of large objects.</param>
         protected virtual void Dispose(bool disposing)
         {
-            if (!_disposedValue)
+            if (_disposedValue)
             {
-                // Set before the callbacks run and before the state is cleared.
-                _disposedValue = true;
+                return;
+            }
 
-                if (disposing)
+            if (!disposing)
+            {
+                // There is nothing unmanaged to release, and a consumer's destroy callback must never run
+                // on the finalizer thread. Leaving the flag alone keeps a later real Dispose able to work.
+                return;
+            }
+
+            // Set before the callbacks run and before the state is cleared, so a callback asking
+            // IsDestroyed sees the teardown it was called for.
+            _disposedValue = true;
+
+            FireDestroyCallbacks();
+
+            Attributes = null;
+            Features.Clear();
+            ForcedVariations = null;
+            _trackingCallback = null;
+            _assigned.Clear();
+            _tracked.Clear();
+            _subscribers.Clear();
+            _asyncSubscribers.Clear();
+
+            try
+            {
+                // A consumer-supplied repository, and the built-in one's CancellationTokenSource, can both
+                // throw. The instance is already marked destroyed, so an escape would strand it with the
+                // rest of the teardown undone and no way to retry.
+                _featureRepository.Cancel();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Encountered unhandled exception while cancelling the feature repository");
+            }
+            finally
+            {
+                if (_ownsLoggerFactory && _loggerFactory is IDisposable disposableFactory)
                 {
-                    FireDestroyCallbacks();
-
-                    Attributes = null;
-                    Features.Clear();
-                    ForcedVariations = null;
-                    _trackingCallback = null;
-                    _assigned.Clear();
-                    _tracked.Clear();
-                    _subscribers.Clear();
-                    _asyncSubscribers.Clear();
-                    _featureRepository.Cancel();
-
-                    if (_ownsLoggerFactory && _loggerFactory is IDisposable disposableFactory)
-                    {
-                        disposableFactory.Dispose();
-                    }
+                    disposableFactory.Dispose();
                 }
             }
         }
@@ -213,11 +233,11 @@ namespace GrowthBook
         public bool IsDestroyed => _disposedValue;
 
         /// <inheritdoc />
-        public void OnDestroy(Action callback)
+        public IDisposable OnDestroy(Action callback)
         {
             if (callback is null)
             {
-                return;
+                return new Subscription(() => { });
             }
 
             lock (_destroyCallbackLock)
@@ -225,7 +245,14 @@ namespace GrowthBook
                 if (!_disposedValue)
                 {
                     _destroyCallbacks.Add(callback);
-                    return;
+
+                    return new Subscription(() =>
+                    {
+                        lock (_destroyCallbackLock)
+                        {
+                            _destroyCallbacks.Remove(callback);
+                        }
+                    });
                 }
             }
 
@@ -233,6 +260,8 @@ namespace GrowthBook
             _logger?.LogDebug("A destroy callback was registered after teardown, running it immediately");
 
             InvokeDestroyCallback(callback);
+
+            return new Subscription(() => { });
         }
 
         /// <summary>

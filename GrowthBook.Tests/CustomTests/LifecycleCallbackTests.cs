@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentAssertions;
+using GrowthBook.Api;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -218,5 +221,159 @@ public class LifecycleCallbackTests : UnitTest
 
         growthBook.IsDestroyed.Should().BeTrue("a DI-injected consumer only sees IGrowthBook");
         calls.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Reaches <c>Dispose(bool)</c> the way a finalizer would. There is no finalizer today, but the
+    /// method is protected virtual and shaped as the canonical dispose pattern, so a derived type can.
+    /// </summary>
+    private sealed class FinalizableGrowthBook : GrowthBook
+    {
+        public FinalizableGrowthBook(Context context) : base(context) { }
+
+        public void DisposeAsFinalizerWould() => Dispose(disposing: false);
+    }
+
+    [Fact]
+    public void AFinalizerStyleDisposeDoesNotMarkTheInstanceDestroyed()
+    {
+        var growthBook = new FinalizableGrowthBook(new Context
+        {
+            Attributes = JObject.FromObject(new { id = "user-1" })
+        });
+
+        growthBook.DisposeAsFinalizerWould();
+
+        growthBook.IsDestroyed.Should().BeFalse(
+            "disposing == false means the finalizer, which releases no managed state - marking the instance " +
+            "destroyed there would make a later real Dispose a no-op");
+    }
+
+    [Fact]
+    public void AFinalizerStyleDisposeDoesNotConsumeTheCallbacks()
+    {
+        var growthBook = new FinalizableGrowthBook(new Context
+        {
+            Attributes = JObject.FromObject(new { id = "user-1" })
+        });
+
+        var calls = 0;
+        growthBook.OnDestroy(() => calls++);
+
+        growthBook.DisposeAsFinalizerWould();
+
+        calls.Should().Be(0, "user callbacks must never run on the finalizer thread");
+
+        growthBook.Dispose();
+
+        calls.Should().Be(1, "and the real teardown must still be able to run them");
+    }
+
+    /// <summary>
+    /// A repository whose Cancel throws, standing in for a consumer-supplied one - or the built-in
+    /// path, where CancellationTokenSource.Cancel surfaces an AggregateException from a registered
+    /// cancellation callback.
+    /// </summary>
+    private sealed class ThrowingRepository : IGrowthBookFeatureRepository
+    {
+        public void Cancel() => throw new InvalidOperationException("cancellation blew up");
+
+        public Task<IDictionary<string, Feature>> GetFeatures(GrowthBookRetrievalOptions options = null, CancellationToken? cancellationToken = null)
+            => Task.FromResult<IDictionary<string, Feature>>(new Dictionary<string, Feature>());
+
+        public Task<IDictionary<string, Feature>> GetFeaturesWithContext(Context context, GrowthBookRetrievalOptions options = null, CancellationToken? cancellationToken = null)
+            => GetFeatures(options, cancellationToken);
+
+        public bool HasIdenticalAssignment(string experimentKey, ExperimentAssignment assignment) => false;
+        public void RecordAssignment(string experimentKey, ExperimentAssignment assignment) { }
+        public bool IsAlreadyTracked(string trackingKey) => false;
+        public void MarkAsTracked(string trackingKey) { }
+        public bool TryMarkAsTracked(string trackingKey) => true;
+    }
+
+    [Fact]
+    public void AThrowingRepositoryCancelDoesNotEscapeTeardown()
+    {
+        var growthBook = new GrowthBook(new Context
+        {
+            Attributes = JObject.FromObject(new { id = "user-1" }),
+            FeatureRepository = new ThrowingRepository()
+        });
+
+        var calls = 0;
+        growthBook.OnDestroy(() => calls++);
+
+        Action teardown = () => growthBook.Destroy();
+
+        teardown.Should().NotThrow(
+            "the instance is already marked destroyed by then, so an escaping exception would strand it " +
+            "with the rest of the teardown undone and no way to retry");
+
+        calls.Should().Be(1);
+        growthBook.IsDestroyed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ARegisteredCallbackCanBeUnregistered()
+    {
+        var growthBook = NewInstance();
+        var calls = 0;
+
+        var registration = growthBook.OnDestroy(() => calls++);
+
+        registration.Dispose();
+        growthBook.Destroy();
+
+        calls.Should().Be(0, "OnDestroy returns a handle like Subscribe does, and disposing it detaches the callback");
+    }
+
+    [Fact]
+    public void UnregisteringOneCallbackLeavesTheOthers()
+    {
+        var growthBook = NewInstance();
+        var ran = new List<string>();
+
+        growthBook.OnDestroy(() => ran.Add("first"));
+        var second = growthBook.OnDestroy(() => ran.Add("second"));
+        growthBook.OnDestroy(() => ran.Add("third"));
+
+        second.Dispose();
+        growthBook.Destroy();
+
+        ran.Should().Equal(new[] { "first", "third" });
+    }
+
+    [Fact]
+    public void TheRegistrationHandleIsSafeToDisposeTwiceAndAfterTeardown()
+    {
+        var growthBook = NewInstance();
+        var calls = 0;
+
+        var registration = growthBook.OnDestroy(() => calls++);
+
+        growthBook.Destroy();
+
+        Action disposeLate = () =>
+        {
+            registration.Dispose();
+            registration.Dispose();
+        };
+
+        disposeLate.Should().NotThrow();
+        calls.Should().Be(1, "the callback already ran - unregistering afterwards changes nothing");
+    }
+
+    [Fact]
+    public void RegisteringNullReturnsAHandleRatherThanNull()
+    {
+        var growthBook = NewInstance();
+
+        var registration = growthBook.OnDestroy(null);
+
+        registration.Should().NotBeNull("a caller writing 'using' around the result must not get a null reference");
+
+        Action dispose = () => registration.Dispose();
+
+        dispose.Should().NotThrow();
     }
 }

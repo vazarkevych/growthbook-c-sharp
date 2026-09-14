@@ -90,7 +90,8 @@ namespace GrowthBook
         /// Registers a callback to run once on teardown, before the instance's state is cleared.
         /// </summary>
         /// <param name="callback">Null is ignored; anything it throws is logged and teardown continues.</param>
-        void OnDestroy(Action callback);
+        /// <returns>A handle that unregisters the callback, matching <see cref="Subscribe"/>.</returns>
+        IDisposable OnDestroy(Action callback);
 
         /// <summary>
         /// Returns a map of the latest results indexed by experiment key.
