@@ -23,7 +23,12 @@ namespace GrowthBook.MultiUser.Configuration
         /// <summary>Force specific feature values for this user. Takes precedence over global forced values.</summary>
         public IDictionary<string, JToken> ForcedFeatureValues { get; set; }
 
-        /// <summary>Per-request tracking callback. Overrides <see cref="Options.TrackingCallback"/> if set.</summary>
+        /// <summary>
+        /// Per-request tracking callback. Runs in addition to <see cref="Options.TrackingCallback"/>, which is not
+        /// replaced: setting both means both are invoked for the same exposure, so do not send both to the same
+        /// analytics sink. The two live in separate contexts by design — the global one is the application's,
+        /// this one belongs to the request.
+        /// </summary>
         public Action<Experiment, ExperimentResult> TrackingCallback { get; set; }
 
         /// <summary>Per-request sticky bucket service. Overrides <see cref="Options.StickyBucketService"/> if set.</summary>

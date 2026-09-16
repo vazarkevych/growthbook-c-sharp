@@ -17,6 +17,8 @@ namespace GrowthBook
         private readonly Context _baseContext;
         private readonly IGrowthBookFeatureRepository _sharedRepository;
         private readonly bool _ownsSharedRepository;
+        private readonly ILoggerFactory _loggerFactory;
+        private readonly bool _ownsLoggerFactory;
         private bool _disposed = false;
 
         /// <summary>
@@ -38,7 +40,15 @@ namespace GrowthBook
             }
             else if (!string.IsNullOrEmpty(baseContext.ClientKey))
             {
-                _sharedRepository = CreateSharedRepository(baseContext);
+                _loggerFactory = baseContext.LoggerFactory;
+
+                if (_loggerFactory == null)
+                {
+                    _loggerFactory = LoggerFactory.Create(_ => { });
+                    _ownsLoggerFactory = true;
+                }
+
+                _sharedRepository = CreateSharedRepository(baseContext, _loggerFactory);
                 _ownsSharedRepository = true;
             }
         }
@@ -68,7 +78,13 @@ namespace GrowthBook
                 context.FeatureRepository = _sharedRepository;
             }
 
-            context.TrackingCallback = trackingCallback;
+            // Only override when the caller actually supplied one. Assigning unconditionally wiped the base
+            // context's callback for every user created without their own, which silently stopped tracking
+            // their experiment exposures.
+            if (trackingCallback != null)
+            {
+                context.TrackingCallback = trackingCallback;
+            }
 
             return new GrowthBook(context);
         }
@@ -99,14 +115,22 @@ namespace GrowthBook
                 context.FeatureRepository = _sharedRepository;
             }
 
-            context.TrackingCallback = trackingCallback;
+            // Only override when the caller actually supplied one. Assigning unconditionally wiped the base
+            // context's callback for every user created without their own, which silently stopped tracking
+            // their experiment exposures.
+            if (trackingCallback != null)
+            {
+                context.TrackingCallback = trackingCallback;
+            }
 
             return new GrowthBook(context);
         }
 
         /// <summary>
-        /// Disposes of factory resources. Cancels the shared repository worker if it was
-        /// created internally (i.e. caller did not inject their own <see cref="IGrowthBookFeatureRepository"/>).
+        /// Disposes of factory resources. Cancels the shared repository worker, and disposes the logger factory,
+        /// if they were created internally (i.e. the caller did not inject their own
+        /// <see cref="IGrowthBookFeatureRepository"/> or <see cref="Context.LoggerFactory"/>) — anything supplied
+        /// through the base context belongs to the caller, who may still be using it.
         /// </summary>
         public void Dispose()
         {
@@ -117,12 +141,15 @@ namespace GrowthBook
             {
                 _sharedRepository?.Cancel();
             }
+
+            if (_ownsLoggerFactory)
+            {
+                _loggerFactory.Dispose();
+            }
         }
 
-        private static IGrowthBookFeatureRepository CreateSharedRepository(Context context)
+        internal static IGrowthBookFeatureRepository CreateSharedRepository(Context context, ILoggerFactory loggerFactory)
         {
-            var loggerFactory = context.LoggerFactory ?? LoggerFactory.Create(_ => { });
-
             var config = CreateSharedConfiguration(context);
 
             var cache = context.FeatureCache ?? new InMemoryFeatureCache(cacheExpirationInSeconds: context.CacheExpirationInSeconds);
@@ -133,10 +160,23 @@ namespace GrowthBook
                 config,
                 cache);
 
+            // The repository the GrowthBook constructor builds for itself gets one of these whenever the context
+            // asks for remote evaluation. Leaving it out here meant the same context evaluated remotely through
+            // new GrowthBook(context) but silently did not through the factory.
+            IRemoteEvaluationService remoteEvaluationService = null;
+
+            if (context.RemoteEval)
+            {
+                remoteEvaluationService = new RemoteEvaluationService(
+                    loggerFactory.CreateLogger<RemoteEvaluationService>(),
+                    httpClientFactory);
+            }
+
             return new FeatureRepository(
                 loggerFactory.CreateLogger<FeatureRepository>(),
                 cache,
-                refreshWorker);
+                refreshWorker,
+                remoteEvaluationService);
         }
 
         /// <summary>

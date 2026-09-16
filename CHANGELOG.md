@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Empty string fallback attribute no longer causes incorrect bucket assignment.
 - `ForcedVariations` null reference in `GrowthBook` constructor.
 - `RefreshStickyBuckets` is now called after features refresh in `LoadFeaturesWithResult`.
+- `GrowthBookFactory.CreateForUser` assigned the per-user tracking callback unconditionally, so calling it without
+  one — the default — wiped the base context's callback and silently stopped tracking that user's experiment
+  exposures. It now only overrides when a callback is actually supplied.
+- The shared repository `GrowthBookFactory` builds internally was missing the remote evaluation service, so a
+  context with `RemoteEval` set evaluated remotely through `new GrowthBook(context)` but not through the factory.
+- `GrowthBookFactory.Dispose` now disposes a logger factory it created itself. One supplied through
+  `Context.LoggerFactory` is left alone, since the caller may still be using it.
 
 ### Deprecated
 - `GrowthBookFactory` — use `GrowthBookClient` instead.
