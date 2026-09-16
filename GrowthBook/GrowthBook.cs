@@ -330,7 +330,7 @@ namespace GrowthBook
         /// <returns><c>true</c> if the feature is on; otherwise, <c>false</c>.</returns>
         public async Task<bool> IsOnAsync(string key, CancellationToken? cancellationToken = null)
         {
-            await LoadFeatures(cancellationToken: cancellationToken);
+            await LoadFeatures(cancellationToken: cancellationToken).ConfigureAwait(false);
             var result = EvaluateFeature(key);
             var value = result.Value;
             return !value.IsNull() && value.ToObject<bool>();
@@ -344,7 +344,7 @@ namespace GrowthBook
         /// <returns><c>true</c> if the feature is off; otherwise, <c>false</c>.</returns>
         public async Task<bool> IsOffAsync(string key, CancellationToken? cancellationToken = null)
         {
-            var on = await IsOnAsync(key, cancellationToken);
+            var on = await IsOnAsync(key, cancellationToken).ConfigureAwait(false);
             return !on;
         }
 
@@ -410,7 +410,7 @@ namespace GrowthBook
         /// <inheritdoc />
         public async Task<T> GetFeatureValueAsync<T>(string key, T fallback, CancellationToken? cancellationToken = null)
         {
-            var result = await EvalFeatureAsync(key, cancellationToken);
+            var result = await EvalFeatureAsync(key, cancellationToken).ConfigureAwait(false);
             var value = result.Value;
 
             return value.IsNull() ? fallback : value.ToObject<T>();
@@ -435,7 +435,7 @@ namespace GrowthBook
 
         public async Task<FeatureResult> EvalFeatureAsync(string featureId, CancellationToken? cancellationToken = null)
         {
-            await LoadFeatures(cancellationToken: cancellationToken);
+            await LoadFeatures(cancellationToken: cancellationToken).ConfigureAwait(false);
 
             return EvaluateFeature(featureId);
         }
@@ -626,7 +626,7 @@ namespace GrowthBook
         /// <inheritdoc />
         public async Task LoadFeatures(GrowthBookRetrievalOptions options = null, CancellationToken? cancellationToken = null)
         {
-            var result = await LoadFeaturesWithResult(options, cancellationToken);
+            var result = await LoadFeaturesWithResult(options, cancellationToken).ConfigureAwait(false);
 
             if (!result.Success)
             {
@@ -648,11 +648,11 @@ namespace GrowthBook
                 if (_context.RemoteEval && RemoteEvaluationUtilities.IsValidForRemoteEvaluation(_context))
                 {
                     var currentContext = CreateCurrentContext();
-                    features = await _featureRepository.GetFeaturesWithContext(currentContext, options, cancellationToken);
+                    features = await _featureRepository.GetFeaturesWithContext(currentContext, options, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    features = await _featureRepository.GetFeatures(options, cancellationToken);
+                    features = await _featureRepository.GetFeatures(options, cancellationToken).ConfigureAwait(false);
                 }
 
                 if (features == null)
@@ -1170,7 +1170,7 @@ namespace GrowthBook
                 _logger?.LogDebug("Triggering remote evaluation due to attribute changes");
 
                 var currentContext = CreateCurrentContext();
-                var features = await _featureRepository.GetFeaturesWithContext(currentContext);
+                var features = await _featureRepository.GetFeaturesWithContext(currentContext).ConfigureAwait(false);
 
                 if (features != null)
                 {

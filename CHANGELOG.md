@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Fixed a deadlock on single-threaded synchronization contexts (classic ASP.NET on .NET Framework, WPF,
+  WinForms). No await in the SDK captures the caller's context any more, across `GrowthBook`,
+  `FeatureRepository`, `RemoteEvaluationService`, `FeatureRefreshWorker`, `HttpClientExtensions` and
+  `SSEClient`. An application that blocks on an SDK task could previously deadlock, and the SDK did this to
+  itself through `EvalFeature(key, alwaysLoadFeatures: true)` and
+  `GetFeatureValue(key, fallback, alwaysLoadFeatures: true)`, which block internally.
+  Note that code after an await now resumes on a thread pool thread, so a `TrackingCallback` or subscriber
+  that touches context-affine state (UI controls, `HttpContext.Current`) has to marshal back itself.
+
 ## [1.2.0]
 
 - Added custom fields support for experiments.
