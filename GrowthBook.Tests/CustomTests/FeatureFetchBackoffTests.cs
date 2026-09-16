@@ -462,11 +462,15 @@ public class FeatureFetchBackoffTests
 
         await cache.RefreshWith(FeatureSet());
 
-        await repository.GetFeatures(Background);
-        worker.WaitForAttempts(1).Should().BeTrue();
+        // Blocking rather than background for the two calls that set the window up: the background path
+        // records the failure in a continuation, so waiting for the attempt to start says nothing about
+        // whether the outcome has landed yet, and the next call can slip through the gate before it has.
+        // Blocking records synchronously before returning. Either way the refresh is the automatic one,
+        // which is the distinction this test is about.
+        await repository.GetFeatures(Blocking);
+        worker.Attempts.Should().Be(1);
 
-        await repository.GetFeatures(Background);
-        worker.WaitForQuiet();
+        await repository.GetFeatures(Blocking);
         worker.Attempts.Should().Be(1, "the automatic refresh is the one the window suppresses");
 
         await repository.GetFeatures(new GrowthBookRetrievalOptions { ForceRefresh = true });
@@ -515,9 +519,14 @@ public class FeatureFetchBackoffTests
 
         var callers = new List<Task<IDictionary<string, Feature>>>();
 
+        // Called here rather than through Task.Run: GetFeatures runs synchronously as far as
+        // StartOrJoinRefresh, since nothing awaits before it, so every caller is joined to the same fetch
+        // by the time this loop ends. Dispatching them to the thread pool instead made the join depend on
+        // how quickly the pool grows to eight workers - on a two-core runner it does not, and a straggler
+        // arriving after the fetch completed starts a second one.
         for (var i = 0; i < 8; i++)
         {
-            callers.Add(Task.Run(() => repository.GetFeatures(Blocking)));
+            callers.Add(repository.GetFeatures(Blocking));
         }
 
         worker.WaitUntilEntered().Should().BeTrue();
