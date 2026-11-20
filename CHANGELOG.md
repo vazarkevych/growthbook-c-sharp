@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). From 2.2.0 on,
 [release-please](https://github.com/googleapis/release-please) writes the entries from merged PR titles.
 
+## [3.0.0](https://github.com/vazarkevych/growthbook-c-sharp/compare/v2.1.1...v3.0.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* conditions using an unsupported operator or saved group type no longer pass when negated
+
+### Features
+
+* add CustomFields property to Experiment.cs, update Equals function, add custom DictionariesEqual function ([f756bf7](https://github.com/vazarkevych/growthbook-c-sharp/commit/f756bf747176ad45b5af7e3152699bb7a1493f2c))
+* align with spec 0.12.0 (strict types, condition edge cases, bucketing, payload reduction) ([#114](https://github.com/vazarkevych/growthbook-c-sharp/issues/114)) ([63be0ce](https://github.com/vazarkevych/growthbook-c-sharp/commit/63be0cecf84f54fb1eb257e69b5f20a0fffbfa6c))
+* Di registration ([#118](https://github.com/vazarkevych/growthbook-c-sharp/issues/118)) ([0f36a1c](https://github.com/vazarkevych/growthbook-c-sharp/commit/0f36a1c6f37023290fc72d387e22d45a1d6a91e4))
+* Growthbook client ([#117](https://github.com/vazarkevych/growthbook-c-sharp/issues/117)) ([be71c15](https://github.com/vazarkevych/growthbook-c-sharp/commit/be71c1583f6a43946ade1a8836084a1d8107171c))
+* implement CustomFieldsTests ([540241c](https://github.com/vazarkevych/growthbook-c-sharp/commit/540241c3a73437dfe86c13d9b618622b36f0c176))
+* implement ExperimentExtensions class ([731eb94](https://github.com/vazarkevych/growthbook-c-sharp/commit/731eb94a92294ca81b3327cb0b0b8977dbc5deda))
+* Logging to a structured logging ([adf1f5f](https://github.com/vazarkevych/growthbook-c-sharp/commit/adf1f5feabdcfca814fe53278ce6e11ba071a8d0))
+* Logging to a structured logging ([394bdb1](https://github.com/vazarkevych/growthbook-c-sharp/commit/394bdb1e1102122126f354ed19eb48867557904a))
+
+
+### Bug Fixes
+
+* apply reconnect backoff when the SSE stream closes cleanly ([#91](https://github.com/vazarkevych/growthbook-c-sharp/issues/91)) ([e7e90b0](https://github.com/vazarkevych/growthbook-c-sharp/commit/e7e90b06bae3b50e5e996a67a364e90d20704b1a))
+* avoid quadratic regex when stripping version build metadata ([#123](https://github.com/vazarkevych/growthbook-c-sharp/issues/123)) ([e90a92b](https://github.com/vazarkevych/growthbook-c-sharp/commit/e90a92bfb347b346e8d3bad23575b1f2c45f149a))
+* BucketRangeTupleConverter.WriteJson casts BucketRange to Namespace ([6a59cc0](https://github.com/vazarkevych/growthbook-c-sharp/commit/6a59cc083bb3127af3d4e413b5c1cacf71f62662))
+* ci crash after fixing conflicts ([d1495af](https://github.com/vazarkevych/growthbook-c-sharp/commit/d1495afdc4885f560577bcae7761d926195de9fc))
+* correct BucketRange serialization in BucketRangeTupleConverter ([eb48245](https://github.com/vazarkevych/growthbook-c-sharp/commit/eb482454e48e98c479a18a87686983d656c5b0da))
+* correct sticky bucket change detection by comparing assignments only ([#76](https://github.com/vazarkevych/growthbook-c-sharp/issues/76)) ([df9a68a](https://github.com/vazarkevych/growthbook-c-sharp/commit/df9a68a3edf9e2998e7c2fb8c3a34a7753cfd765))
+* decrypt Context.EncryptedFeatures and stop logging the decryption key ([71eb941](https://github.com/vazarkevych/growthbook-c-sharp/commit/71eb941e297dfc5b5020078571f4f23b6893a4cf))
+* decrypt Context.EncryptedFeatures and stop logging the decryptn key ([fb07707](https://github.com/vazarkevych/growthbook-c-sharp/commit/fb0770745a30a08d56d7c314b6f53d42bc5daa32))
+* evaluate a context payload without reaching for an API ([cec7d76](https://github.com/vazarkevych/growthbook-c-sharp/commit/cec7d769ba75415fee2b23084f5348d68cc91a04))
+* implement GetHashCode on the five types that override Equals ([#102](https://github.com/vazarkevych/growthbook-c-sharp/issues/102)) ([15ec84f](https://github.com/vazarkevych/growthbook-c-sharp/commit/15ec84f5e451d08446399636dce4d8db96d3144b))
+* make cache expiry testable and stop pinning test assertions to log statements- [#32](https://github.com/vazarkevych/growthbook-c-sharp/issues/32) ([#107](https://github.com/vazarkevych/growthbook-c-sharp/issues/107)) ([a5989ce](https://github.com/vazarkevych/growthbook-c-sharp/commit/a5989ceda276f2f2c39ce8052036bfa8fc1d91d9))
+* NullReferenceException in ElemMatch array condition logging ([#74](https://github.com/vazarkevych/growthbook-c-sharp/issues/74)) ([1f7761f](https://github.com/vazarkevych/growthbook-c-sharp/commit/1f7761f158062d2841ecd0ef7af4b81270fafc3b))
+* preserve SSE data following heartbeat comments ([#132](https://github.com/vazarkevych/growthbook-c-sharp/issues/132)) ([5e62be8](https://github.com/vazarkevych/growthbook-c-sharp/commit/5e62be881e34f3cd1e6655af9d57094b5db10967))
+* remove subscriptions, add _subscribers and _asyncSubscribers ([b920bd1](https://github.com/vazarkevych/growthbook-c-sharp/commit/b920bd19152f6a301eed0dcb90abb67e9bce4e55))
+* removed preview features from code ([eaa6708](https://github.com/vazarkevych/growthbook-c-sharp/commit/eaa67089b7b94f94813ffc7cad57ce54f9464372))
+* renamed IGrowthbook to IGrowthBook to match the implementation a… ([3ffd14b](https://github.com/vazarkevych/growthbook-c-sharp/commit/3ffd14b5c4d65eecb7ad3c9af6f96e4962b7b86a))
+* renamed IGrowthbook to IGrowthBook to match the implementation and added versioning ([6cdeeed](https://github.com/vazarkevych/growthbook-c-sharp/commit/6cdeeedc2a18f4f6627996b636457586bff74081))
+* resolve $inGroup and $notInGroup independently for an absent attribute ([#90](https://github.com/vazarkevych/growthbook-c-sharp/issues/90)) ([a447429](https://github.com/vazarkevych/growthbook-c-sharp/commit/a447429b7ae2809b39f94089bd0b7a27e823896a))
+* return the fallback from GetFeatureValue when the value cannot be converted ([#99](https://github.com/vazarkevych/growthbook-c-sharp/issues/99)) ([e7a0ec2](https://github.com/vazarkevych/growthbook-c-sharp/commit/e7a0ec235f42b13431d3bb4deec7e81821ca060d))
+* stop concurrent evaluations corrupting sticky buckets and the SSE ([#115](https://github.com/vazarkevych/growthbook-c-sharp/issues/115)) ([909b139](https://github.com/vazarkevych/growthbook-c-sharp/commit/909b13920c3c2a0c3ba6ff0bb9a7daf8a097e248))
+* stop writing secrets and payload bodies to the log ([492de61](https://github.com/vazarkevych/growthbook-c-sharp/commit/492de61d9eff3eedb64171caef6a39a523b5957f))
+* stop writing secrets and payload bodies to the log ([4c1d7d1](https://github.com/vazarkevych/growthbook-c-sharp/commit/4c1d7d119de7d7a6a4622bc7dc483d1f158456ad))
+
 ## [2.1.1](https://github.com/growthbook/growthbook-c-sharp/compare/v2.1.0...v2.1.1) (2026-11-19)
 
 
